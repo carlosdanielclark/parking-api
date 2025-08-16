@@ -6,6 +6,15 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+// Importaciones de entidades
+import { User } from './entities/user.entity';
+import { Plaza } from './entities/plaza.entity';
+import { Vehiculo } from './entities/vehiculo.entity';
+import { Reserva } from './entities/reserva.entity';
+// Importa esquemas de log
+import { Log, LogSchema } from './schemas/log.schema';
+import { DatabaseTestService } from './database/database-test.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -21,8 +30,13 @@ import { AppService } from './app.service';
         username: configService.get('database.postgres.username'),
         password: configService.get('database.postgres.password'),
         database: configService.get('database.postgres.database'),
-        autoLoadEntities: true,
+        entities: [User, Plaza, Vehiculo, Reserva], // Entidades añadidas
         synchronize: true, // Solo para desarrollo
+        logging: ['error'], // ['error', 'warn'] o true,
+        // Configuración de pool de conexiones
+        extra: {
+          connectionLimit: 10,
+        },
       }),
       inject: [ConfigService],
     }),
@@ -39,8 +53,12 @@ import { AppService } from './app.service';
       },
       inject: [ConfigService],
     }),
+    MongooseModule.forFeature([{ name: Log.name, schema: LogSchema }]), // Modelo añadido
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService, 
+    DatabaseTestService, // Servicio añadido
+  ],
 })
 export class AppModule {}

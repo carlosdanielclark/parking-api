@@ -28,7 +28,7 @@ export default () => ({
 
   jwt: {
     secret: getEnvString('JWT_SECRET'),
-    expirationTime: getEnvString('JWT_EXPIRATION_TIME'),
+    expirationTime: getEnvNumber('JWT_EXPIRATION_TIME'),
   },
 });
 
