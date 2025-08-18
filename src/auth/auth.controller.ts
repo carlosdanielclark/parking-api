@@ -1,10 +1,10 @@
 import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus, Logger } from '@nestjs/common';
-import { AuthService } from './auth-service';
+import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register-dto';
 import { LoginDto } from './dto/login-dto';
-import { Public } from './decorators/public-decorator';
-import { JwtAuthGuard } from './guards/jwt-auth-guard';
-import * as getUserDecorator from './decorators/get-user-decorator';
+import { Public } from './decorators/public.decorator';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import * as getUserDecorator from './decorators/get-user.decorator';
 
 /**
  * Controlador de autenticación y autorización

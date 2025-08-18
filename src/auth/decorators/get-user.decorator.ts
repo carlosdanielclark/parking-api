@@ -18,8 +18,7 @@ export const GetUser = createParamDecorator(
      * Si no se especifica, retornar el objeto usuario completo
      * 
      * @example
-     * ```typescript
-     * // Obtener usuario completo
+     *      * // Obtener usuario completo
      * getUserProfile(@GetUser() user: any) {
      *   // user = { userId: 'uuid', email: 'user@email.com', role: 'cliente' }
      * }
@@ -38,8 +37,7 @@ export const GetUser = createParamDecorator(
      * getUserRole(@GetUser('role') role: UserRole) {
      *   // role = UserRole.CLIENTE
      * }
-     * ```
-     */
+     *      */
     return data ? user?.[data] : user;
   },
 );

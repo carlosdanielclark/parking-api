@@ -3,7 +3,7 @@ import { ExtractJwt, Strategy, StrategyOptionsWithoutRequest } from 'passport-jw
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from '../auth-service'; // corregido import
+import { AuthService } from '../auth.service'; // corregido import
 import { Request } from 'express';
 
 @Injectable()

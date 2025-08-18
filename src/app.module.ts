@@ -22,9 +22,18 @@ import { DatabaseTestService } from './database/database-test-service';
 import { SeedAdminService } from './database/seed-admin-service';
 
 // Importaciones del módulo de autenticación
-import { AuthModule } from './auth/auth-module';
-import { JwtAuthGuard } from './auth/guards/jwt-auth-guard';
-import { RolesGuard } from './auth/guards/roles-guard';
+import { AuthModule } from './auth/auth.module';
+
+// Importación de nuevos módulos CRUD
+import { UsersModule } from './users/users.module';
+import { PlazasModule } from './plazas/plazas.module';
+import { VehiculosModule } from './vehiculos/vehiculos.module';
+import { ReservasModule } from './reservas/reservas.module';
+import { LogsModule } from './logs/logs.module';
+
+// Importaciones de guards globales
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
 
 /**
  * Módulo principal de la aplicación
@@ -33,18 +42,11 @@ import { RolesGuard } from './auth/guards/roles-guard';
  */
 @Module({
   imports: [
-    /**
-     * Configuración global del módulo de configuración
-     * Carga variables de entorno y configuración de la aplicación
-     */
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
       envFilePath: ['.env', '.env.local'],
-      validationOptions: {
-        allowUnknown: false,
-        abortEarly: true,
-      },
+      validationOptions: { allowUnknown: false, abortEarly: true },
     }),
 
     /**
@@ -61,7 +63,7 @@ import { RolesGuard } from './auth/guards/roles-guard';
         password: configService.get('database.postgres.password'),
         database: configService.get('database.postgres.database'),
         entities: [User, Plaza, Vehiculo, Reserva],
-        synchronize: configService.get('nodeEnv') === 'development', // Solo en desarrollo
+        synchronize: configService.get('nodeEnv') === 'development',
         logging: configService.get('nodeEnv') === 'development' ? ['error', 'warn'] : ['error'],
         
         // Configuración del pool de conexiones
@@ -70,7 +72,7 @@ import { RolesGuard } from './auth/guards/roles-guard';
           acquireTimeout: 60000,
           timeout: 60000,
         },
-        
+
         // Configuración de timezone
         timezone: 'UTC',
       }),
@@ -87,13 +89,12 @@ import { RolesGuard } from './auth/guards/roles-guard';
         const host = configService.get('database.mongo.host');
         const port = configService.get('database.mongo.port');
         const database = configService.get('database.mongo.database');
-        
         if (!host || !port || !database) {
           throw new Error('MongoDB connection parameters are not properly configured');
         }
-        // Construir URI sin usuario y password:
-        const uri = `mongodb://${host}:${port}/${database}`;
 
+        // Construir URI sin usuario y password
+        const uri = `mongodb://${host}:${port}/${database}`;
         return {
           uri,
           retryAttempts: 3,
@@ -129,6 +130,11 @@ import { RolesGuard } from './auth/guards/roles-guard';
      * Configura JWT, Passport y servicios de autenticación
      */
     AuthModule,
+    UsersModule,
+    PlazasModule,
+    VehiculosModule,
+    ReservasModule,
+    LogsModule,
   ],
 
   /**
@@ -150,27 +156,22 @@ import { RolesGuard } from './auth/guards/roles-guard';
      */
     {
       provide: APP_PIPE,
-      useFactory: () => new ValidationPipe({
-        // Transformar automáticamente los tipos de datos
-        transform: true,
-        
-        // Remover propiedades no definidas en DTOs
-        whitelist: true,
-        
-        // Rechazar requests con propiedades no permitidas
-        forbidNonWhitelisted: true,
-        
-        // Validar arrays anidados
-        validateCustomDecorators: true,
-        
-        // Personalizar mensajes de error
-        errorHttpStatusCode: 422,
-        
-        // Parar en el primer error encontrado
-        stopAtFirstError: true,
-      }),
+      useFactory: () =>
+        new ValidationPipe({
+          // Transformar automáticamente los tipos de datos
+          transform: true,
+          // Remover propiedades no definidas en DTOs
+          whitelist: true,
+          // Rechazar requests con propiedades no permitidas
+          forbidNonWhitelisted: true,
+          // Validar arrays anidados
+          validateCustomDecorators: true,
+          // Personalizar mensajes de error
+          errorHttpStatusCode: 422,
+          // Parar en el primer error encontrado
+          stopAtFirstError: true,
+        }),
     },
-
     /**
      * Guard global de autenticación JWT
      * Protege todas las rutas excepto las marcadas con @Public()
@@ -179,7 +180,6 @@ import { RolesGuard } from './auth/guards/roles-guard';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
-
     /**
      * Guard global de autorización por roles
      * Verifica permisos basados en roles después de la autenticación
@@ -194,7 +194,6 @@ export class AppModule {
   constructor(private configService: ConfigService) {
     this.logStartupInfo();
   }
-
   /**
    * Muestra información de configuración al iniciar la aplicación
    * Útil para debugging y verificación de entorno

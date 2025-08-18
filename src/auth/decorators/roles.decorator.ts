@@ -15,8 +15,7 @@ export const ROLES_KEY = 'roles';
  * @returns Decorador que establece metadatos de roles
  * 
  * @example
- * ```typescript
- * // Solo administradores pueden acceder
+ *  * // Solo administradores pueden acceder
  * @Roles(UserRole.ADMIN)
  * @Get('admin-only')
  * adminOnlyEndpoint() {}
@@ -29,6 +28,5 @@ export const ROLES_KEY = 'roles';
  * // Cualquier usuario autenticado puede acceder (sin @Roles)
  * @Get('all-users')
  * allUsersEndpoint() {}
- * ```
- */
+ *  */
 export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);

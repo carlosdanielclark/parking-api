@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../entities/user.entity';
 import * as bcrypt from 'bcrypt';
-import { authConstants } from '../auth/auth-constants';
+import { authConstants } from '../auth/constants';
 
 /**
  * Servicio para crear datos de prueba y usuarios administrativos

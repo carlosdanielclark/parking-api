@@ -14,8 +14,7 @@ export const IS_PUBLIC_KEY = 'isPublic';
  * @returns Decorador que marca el endpoint como público
  * 
  * @example
- * ```typescript
- * // Endpoint público - no requiere autenticación
+ *  * // Endpoint público - no requiere autenticación
  * @Public()
  * @Post('login')
  * login(@Body() loginDto: LoginDto) {
@@ -34,6 +33,5 @@ export const IS_PUBLIC_KEY = 'isPublic';
  * getProfile(@GetUser() user: any) {
  *   return user;
  * }
- * ```
- */
+ *  */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);

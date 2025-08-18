@@ -1,7 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '../../entities/user.entity';
-import { ROLES_KEY } from '../decorators/roles-decorator';
+import { ROLES_KEY } from '../decorators/roles.decorator';
 
 /**
  * Guard de autorización basado en roles

@@ -6,7 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../entities/user.entity';
 import { RegisterDto } from './dto/register-dto';
 import { LoginDto } from './dto/login-dto';
-import { authConstants } from './auth-constants';
+import { authConstants } from './constants';
 
 /**
  * Servicio principal de autenticación y autorización
