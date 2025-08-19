@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt-strategy';
 import { User } from '../entities/user.entity';
+import { LoggingModule } from '../logging/logging.module';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { User } from '../entities/user.entity';
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
         const secret = configService.get<string>('JWT_SECRET');
-        const expirationTime = configService.get<number>('JWT_EXPIRATION_TIME');
+        const expirationTime = configService.get<number>('JWT_EXPIRATION_TIME') || 3600;
 
         if (!secret) {
           throw new Error('JWT_SECRET no está configurado en variables de entorno');
@@ -38,6 +39,7 @@ import { User } from '../entities/user.entity';
       },
       inject: [ConfigService],
     }),
+    LoggingModule,
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],

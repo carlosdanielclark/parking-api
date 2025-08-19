@@ -43,7 +43,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     this.logger.debug(`Validando token JWT para usuario: ${payload.sub}`);
 
     // Verificar que el usuario aún existe en la base de datos
-    const user = await this.authService.validateUser(payload.sub);
+    const user = await this.authService.validateUserById(payload.sub);
     if (!user) {
       this.logger.warn(`Token válido pero usuario no encontrado: ${payload.sub}`);
       throw new UnauthorizedException('Usuario no encontrado o inactivo');

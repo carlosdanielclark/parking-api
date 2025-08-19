@@ -8,6 +8,7 @@ import { User, UserRole } from '../entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { authConstants } from '../auth/constants';
+import { LoggingService } from '../logging/logging.service';
 
 /**
  * Servicio para la gestión completa de usuarios
@@ -21,6 +22,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly loggingService: LoggingService, //NEW LINE
   ) {}
 
   /**
@@ -128,6 +130,16 @@ export class UsersService {
       this.logger.error(`Error al buscar usuario ${id}: ${error.message}`, error.stack);
       throw new BadRequestException('Error interno al buscar usuario');
     }
+  }
+
+  /**
+  * Busca un usuario por su email.
+  * 
+  * @param email - Email del usuario a buscar.
+  * @returns El usuario encontrado o null si no existe.
+  */
+  async findByEmail(email: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { email } });
   }
 
   /**
@@ -259,6 +271,19 @@ export class UsersService {
   }
 
   /**
+   * Busca usuario por ID
+   * @param userId - ID del usuario
+   * @returns Usuario completo o null si no existe
+   */
+  async findById(userId: string): Promise<User | null> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'nombre', 'email', 'role', 'telefono'], // Excluir la password explícitamente
+    });
+    return user || null;
+  }
+
+  /**
    * Obtiene estadísticas de usuarios por rol
    * Útil para dashboards administrativos
    * 
@@ -281,5 +306,30 @@ export class UsersService {
       this.logger.error(`Error al obtener estadísticas de usuarios: ${error.message}`, error.stack);
       throw new BadRequestException('Error interno al obtener estadísticas');
     }
+  }
+  async actualizarUsuario(id: string, updateDto: UpdateUserDto, adminUser: any) {
+    // Obtener estado previo antes de cambios
+    const usuarioPrevio = await this.userRepository.findOne({ where: { id } });
+    if (!usuarioPrevio) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+    const previousUserState = {
+      nombre: usuarioPrevio.nombre,
+      email: usuarioPrevio.email,
+      telefono: usuarioPrevio.telefono,
+      role: usuarioPrevio.role,
+    };
+    // Aplicar cambios
+    Object.assign(usuarioPrevio, updateDto);
+    const usuarioActualizado = await this.userRepository.save(usuarioPrevio);
+    // Registrar en logs
+    await this.loggingService.logUserUpdated(
+      adminUser.userId,
+      id,
+      previousUserState,
+      updateDto,
+      'Actualización realizada por admin'
+    );
+    return usuarioActualizado;
   }
 }

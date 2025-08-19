@@ -8,6 +8,9 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+// Importacion de helper
+import { getEnvString } from './helpers/validate_helper';
+
 // Importaciones de entidades TypeORM
 import { User } from './entities/user.entity';
 import { Plaza } from './entities/plaza.entity';
@@ -35,6 +38,9 @@ import { LogsModule } from './logs/logs.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
+// Importaciones de Logging
+import { LoggingModule } from './logging/logging.module';
+
 /**
  * Módulo principal de la aplicación
  * Configura bases de datos, autenticación, guards globales y validación
@@ -57,15 +63,14 @@ import { RolesGuard } from './auth/guards/roles.guard';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
-        host: configService.get('database.postgres.host'),
-        port: configService.get('database.postgres.port'),
-        username: configService.get('database.postgres.username'),
-        password: configService.get('database.postgres.password'),
-        database: configService.get('database.postgres.database'),
+        host: configService.get<string>('database.postgres.host')!,
+        port: configService.get<number>('database.postgres.port')!,
+        username: configService.get<string>('database.postgres.username')!,
+        password: configService.get<string>('database.postgres.password')!,
+        database: configService.get<string>('database.postgres.database')!,
         entities: [User, Plaza, Vehiculo, Reserva],
-        synchronize: configService.get('nodeEnv') === 'development',
-        logging: configService.get('nodeEnv') === 'development' ? ['error', 'warn'] : ['error'],
-        
+        synchronize: configService.get<string>('nodeEnv') === 'development',
+        logging: configService.get<string>('nodeEnv') === 'development' ? ['error', 'warn'] : ['error'],
         // Configuración del pool de conexiones
         extra: {
           connectionLimit: 10,
@@ -86,13 +91,13 @@ import { RolesGuard } from './auth/guards/roles.guard';
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        const host = configService.get('database.mongo.host');
-        const port = configService.get('database.mongo.port');
-        const database = configService.get('database.mongo.database');
+        const host = configService.get<string>('database.mongo.host')!;
+        const port = configService.get<number>('database.mongo.port')!;
+        const database = configService.get<string>('database.mongo.database')!;
         if (!host || !port || !database) {
           throw new Error('MongoDB connection parameters are not properly configured');
         }
-
+        
         // Construir URI sin usuario y password
         const uri = `mongodb://${host}:${port}/${database}`;
         return {
@@ -129,12 +134,14 @@ import { RolesGuard } from './auth/guards/roles.guard';
      * Módulo de autenticación y autorización
      * Configura JWT, Passport y servicios de autenticación
      */
+    MongooseModule.forRoot(getEnvString('MONGO_URI')),
     AuthModule,
     UsersModule,
     PlazasModule,
     VehiculosModule,
     ReservasModule,
     LogsModule,
+    LoggingModule,
   ],
 
   /**

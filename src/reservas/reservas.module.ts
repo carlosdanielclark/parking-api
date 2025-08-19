@@ -8,6 +8,8 @@ import { Reserva } from '../entities/reserva.entity';
 import { Plaza } from '../entities/plaza.entity';
 import { User } from '../entities/user.entity';
 import { Vehiculo } from '../entities/vehiculo.entity';
+import { ReservaTransactionModule } from './services/reserva-transaction.module';
+import { LoggingModule } from '../logging/logging.module';
 
 /**
  * Módulo de gestión de reservas de parking
@@ -22,7 +24,9 @@ import { Vehiculo } from '../entities/vehiculo.entity';
       Plaza,    // Necesaria para validar disponibilidad y actualizar estados
       User,     // Necesaria para validar propietarios de reservas
       Vehiculo  // Necesaria para validar propiedad de vehículos
-    ])
+    ]),
+    ReservaTransactionModule,
+    LoggingModule,
   ],
   controllers: [ReservasController],
   providers: [ReservasService],

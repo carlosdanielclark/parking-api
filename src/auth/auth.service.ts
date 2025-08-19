@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,11 +7,11 @@ import { User, UserRole } from '../entities/user.entity';
 import { RegisterDto } from './dto/register-dto';
 import { LoginDto } from './dto/login-dto';
 import { authConstants } from './constants';
+import { LoggingService } from 'src/logging/logging.service';
 
 /**
- * Servicio principal de autenticación y autorización
- * Maneja registro, login y validación de usuarios con JWT
- * Integra hashing de contraseñas y generación de tokens
+ * Servicio de autenticación y registro de usuarios
+ * Maneja JWT, encriptación de contraseñas y validación de credenciales
  */
 @Injectable()
 export class AuthService {
@@ -21,42 +21,38 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly loggingService: LoggingService,
   ) {}
 
   /**
-   * Registra un nuevo usuario en el sistema
-   * Valida unicidad del email y hashea la contraseña
-   * @param registerDto - Datos del usuario a registrar
-   * @returns Usuario creado (sin contraseña) y token JWT
+   * Registrar nuevo usuario
+   * Por defecto asigna rol CLIENTE, los admin se crean desde seeds
    */
-  async register(registerDto: RegisterDto): Promise<{ user: Partial<User>; access_token: string }> {
-    const { email, password, nombre, telefono, role } = registerDto;
+  async register(registerDto: RegisterDto): Promise<{ user: Partial<User>, access_token: string }> {
+    const { email, password, ...userData } = registerDto;
 
-    this.logger.log(`Intento de registro para email: ${email}`);
+    this.logger.log(`Registro de usuario: ${email}`);
 
-    // Verificar si el usuario ya existe
+    // Verificar si el email ya existe
     const existingUser = await this.userRepository.findOne({ where: { email } });
     if (existingUser) {
       this.logger.warn(`Intento de registro con email duplicado: ${email}`);
-      throw new ConflictException('El email ya está registrado en el sistema');
+      throw new BadRequestException('El email ya está registrado');
     }
 
     try {
-      // Hashear la contraseña con bcrypt
+      // Encriptar contraseña
       const hashedPassword = await bcrypt.hash(password, authConstants.saltRounds);
 
-      // Crear nuevo usuario
+      // Crear usuario (por defecto CLIENTE, admin solo via registerDto.role)
       const newUser = this.userRepository.create({
+        ...userData,
         email,
         password: hashedPassword,
-        nombre,
-        telefono,
-        role: role || UserRole.CLIENTE,
+        role: registerDto.role || UserRole.CLIENTE,
       });
 
       const savedUser = await this.userRepository.save(newUser);
-      
-      this.logger.log(`Usuario registrado exitosamente: ${savedUser.id} - ${savedUser.email}`);
 
       // Generar token JWT
       const payload = { 
@@ -64,9 +60,11 @@ export class AuthService {
         email: savedUser.email, 
         role: savedUser.role 
       };
-      const access_token = await this.jwtService.signAsync(payload);
+      const access_token = this.jwtService.sign(payload);
 
-      // Remover contraseña del resultado por seguridad
+      this.logger.log(`Usuario registrado exitosamente: ${savedUser.email} (${savedUser.role})`);
+
+      // Remover contraseña de la respuesta
       const { password: _, ...userResult } = savedUser;
 
       return {
@@ -75,71 +73,73 @@ export class AuthService {
       };
     } catch (error) {
       this.logger.error(`Error al registrar usuario: ${error.message}`, error.stack);
-      throw new Error('Error interno al registrar usuario');
+      throw new BadRequestException('Error interno al registrar usuario');
     }
   }
 
   /**
-   * Autentica un usuario existente
-   * Verifica credenciales y genera token JWT
-   * @param loginDto - Credenciales de login
-   * @returns Usuario autenticado (sin contraseña) y token JWT
+   * Autenticar usuario existente
    */
-  async login(loginDto: LoginDto): Promise<{ user: Partial<User>; access_token: string }> {
+  async login(loginDto: LoginDto): Promise<{ user: Partial<User>, access_token: string }> {
     const { email, password } = loginDto;
 
-    this.logger.log(`Intento de login para email: ${email}`);
+    this.logger.log(`Intento de login: ${email}`);
 
-    // Buscar usuario por email
-    const user = await this.userRepository.findOne({ where: { email } });
-    if (!user) {
-      this.logger.warn(`Intento de login con email no registrado: ${email}`);
-      throw new UnauthorizedException('Credenciales inválidas');
+    try {
+      // Buscar usuario por email
+      const user = await this.userRepository.findOne({ where: { email } });
+      if (!user) {
+        this.logger.warn(`Login fallido - usuario no encontrado: ${email}`);
+        throw new UnauthorizedException('Credenciales inválidas');
+      }
+
+      // Verificar contraseña
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        this.logger.warn(`Login fallido - contraseña incorrecta: ${email}`);
+        throw new UnauthorizedException('Credenciales inválidas');
+      }
+
+      // Generar token JWT
+      const payload = { 
+        sub: user.id, 
+        email: user.email, 
+        role: user.role 
+      };
+      const access_token = this.jwtService.sign(payload);
+
+      this.logger.log(`Login exitoso: ${user.email} (${user.role})`);
+
+      // Logging de auditoría
+      try {
+        await this.loggingService.logUserLogin(user.id, user.email);
+      } catch (logError) {
+        this.logger.warn(`Error al registrar log de login: ${logError.message}`);
+      }
+
+      // Remover contraseña de la respuesta
+      const { password: _, ...userResult } = user;
+
+      return {
+        user: userResult,
+        access_token,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      this.logger.error(`Error en login: ${error.message}`, error.stack);
+      throw new BadRequestException('Error interno en autenticación');
     }
-
-    // Verificar contraseña
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      this.logger.warn(`Intento de login con contraseña incorrecta para: ${email}`);
-      throw new UnauthorizedException('Credenciales inválidas');
-    }
-
-    this.logger.log(`Login exitoso para usuario: ${user.id} - ${user.email}`);
-
-    // Generar token JWT
-    const payload = { 
-      sub: user.id, 
-      email: user.email, 
-      role: user.role 
-    };
-    const access_token = await this.jwtService.signAsync(payload);
-
-    // Remover contraseña del resultado
-    const { password: _, ...userResult } = user;
-
-    return {
-      user: userResult,
-      access_token,
-    };
   }
 
   /**
-   * Valida un usuario por su ID
-   * Utilizado por JWT Strategy para verificar tokens
-   * @param userId - ID del usuario a validar
-   * @returns Usuario encontrado o null si no existe
+   * Validar usuario por ID (usado por JWT Strategy)
    */
-  async validateUser(userId: string): Promise<User | null> {
+  async validateUserById(userId: string): Promise<User | null> {
     try {
       const user = await this.userRepository.findOne({ where: { id: userId } });
-      
-      if (user) {
-        this.logger.debug(`Usuario validado: ${user.id} - ${user.email}`);
-      } else {
-        this.logger.warn(`Intento de validación con ID inexistente: ${userId}`);
-      }
-      
-      return user;
+      return user || null;
     } catch (error) {
       this.logger.error(`Error al validar usuario ${userId}: ${error.message}`, error.stack);
       return null;
@@ -147,23 +147,14 @@ export class AuthService {
   }
 
   /**
-   * Verifica si un usuario tiene un rol específico
-   * Utilizado para autorización granular
-   * @param userId - ID del usuario
-   * @param requiredRole - Rol requerido
-   * @returns true si el usuario tiene el rol requerido
+   * Buscar usuario por email (método auxiliar)
    */
-  async hasRole(userId: string, requiredRole: UserRole): Promise<boolean> {
+  async findByEmail(email: string): Promise<User | null> {
     try {
-      const user = await this.userRepository.findOne({ 
-        where: { id: userId },
-        select: ['id', 'role']
-      });
-      
-      return user?.role === requiredRole || false;
+      return await this.userRepository.findOne({ where: { email } });
     } catch (error) {
-      this.logger.error(`Error al verificar rol para usuario ${userId}: ${error.message}`, error.stack);
-      return false;
+      this.logger.error(`Error al buscar usuario por email ${email}: ${error.message}`, error.stack);
+      return null;
     }
   }
 }

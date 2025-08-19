@@ -29,12 +29,16 @@ export enum LogLevel {
 export enum LogAction {
   LOGIN = 'login',
   LOGOUT = 'logout',
+  REGISTER = 'register',
   CREATE_RESERVATION = 'create_reservation',
-  CANCEL_RESERVATION = 'cancel_reservation', 
+  CANCEL_RESERVATION = 'cancel_reservation',
   UPDATE_USER = 'update_user',
-  DELETE_USER = 'delete_user',
+  ROLE_CHANGE = 'role_change',
+  CREATE_PLAZA = 'create_plaza',
+  UPDATE_PLAZA = 'update_plaza',
+  DELETE_PLAZA = 'delete_plaza',
   ACCESS_LOGS = 'access_logs',
-  PARKING_OCUPATION = 'parking_ocupation'
+  SYSTEM_ERROR = 'system_error',
 }
 
 /**

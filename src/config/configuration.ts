@@ -20,6 +20,7 @@ export default () => ({
       host: getEnvString('MONGODB_HOST'),
       port: getEnvNumber('MONGODB_PORT'),
       database: getEnvString('MONGODB_DATABASE'),
+      uri: getEnvString("MONGO_URI"),
       // Opcional: usuario y contraseña si aplica
       // username: getEnvStringOrDefault('MONGODB_USERNAME', ''),
       // password: getEnvStringOrDefault('MONGODB_PASSWORD', ''),
