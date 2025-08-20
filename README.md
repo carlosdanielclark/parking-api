@@ -70,6 +70,7 @@ createdb parking_db
 Asegúrese de configurar el archivo `.env` en la raíz del proyecto con los siguientes valores ajustados a su entorno:
 
 ```
+```
 
 ```
 # PostgreSQL Configuration
