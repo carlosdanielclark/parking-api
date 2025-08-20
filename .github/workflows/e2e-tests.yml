@@ -1,0 +1,54 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: test
+          POSTGRES_DB: parking_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js 18.x
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm ci
+
+    - name: Set up environment variables
+      run: |
+        echo "NODE_ENV=test" >> $GITHUB_ENV
+        echo "DATABASE_URL=postgresql://test:test@localhost:5432/parking_test" >> $GITHUB_ENV
+        echo "JWT_SECRET=test_jwt_secret_key_123" >> $GITHUB_ENV
+        echo "JWT_EXPIRATION_TIME=3600" >> $GITHUB_ENV
+
+    - name: Run E2E tests
+      run: pnpm run test:e2e:cov
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage-e2e/lcov.info
+        flags: e2e
