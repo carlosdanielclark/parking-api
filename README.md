@@ -2,13 +2,16 @@
 # API de Parking
 
 ## Descripción del proyecto
+```
 
 API RESTful construida con Node.js y NestJS para la gestión completa de un sistema de aparcamiento. La aplicación permite reservar plazas de parking para vehículos, consultar la ocupación actual, gestionar usuarios con roles administrativos, empleados y clientes, y acceder a logs detallados de auditoría. Utiliza autenticación basada en JWT y autorización por roles para controlar el acceso a las funcionalidades. La persistencia combina PostgreSQL para las entidades principales y MongoDB para almacenar logs de actividad.
 
 ---
+```
+
 
 ## Estructura del proyecto
-
+```
 ```
 parking-app/
 ├── dist/                           \# Archivos compilados
@@ -39,7 +42,7 @@ parking-app/
 ```
 
 ---
-
+```
 ## Pasos para ejecutar el proyecto de manera local
 
 ### Requisitos previos
@@ -55,7 +58,7 @@ parking-app/
 1. Crear la base de datos en PostgreSQL (por ejemplo `parking_db`).
 
 ```
-
+```
 createdb parking_db
 
 ```
