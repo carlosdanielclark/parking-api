@@ -1,4 +1,4 @@
-```markdown
+
 # API de Parking
 
 ## Descripción del proyecto
@@ -9,7 +9,7 @@ API RESTful construida con Node.js y NestJS para la gestión completa de un sist
 
 ## Estructura del proyecto
 
-```
+```text
 parking-app/
 ├── dist/                           \# Archivos compilados
 ├── node_modules/                   \# Dependencias del proyecto
@@ -36,7 +36,6 @@ parking-app/
 ├── package.json                  \# Configuración de NPM y scripts
 ├── README.md                     \# Documentación del proyecto (actual)
 └── tsconfig.json                 \# Configuración de TypeScript
-
 ```
 
 ---
@@ -166,7 +165,6 @@ Para detalles avanzados, puede consultar la documentación técnica más detalla
 ---
 
 Este proyecto proporciona un sistema robusto y seguro para la gestión integral de parkings, combinando una arquitectura modular con autenticación, roles y auditoría completa con logs almacenados en MongoDB.
-```
 
 <div style="text-align: center">⁂</div>
 
