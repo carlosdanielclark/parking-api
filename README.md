@@ -10,7 +10,6 @@ API RESTful construida con Node.js y NestJS para la gestión completa de un sist
 ## Estructura del proyecto
 
 ```
-
 parking-app/
 ├── dist/                           \# Archivos compilados
 ├── node_modules/                   \# Dependencias del proyecto
@@ -73,17 +72,17 @@ Asegúrese de configurar el archivo `.env` en la raíz del proyecto con los sigu
 
 # PostgreSQL Configuration
 
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USERNAME=admin
-POSTGRES_PASSWORD=admin
-POSTGRES_DATABASE=parking_db
+POSTGRES_HOST=
+POSTGRES_PORT=
+POSTGRES_USERNAME=
+POSTGRES_PASSWORD=
+POSTGRES_DATABASE=
 
 # MongoDB Configuration
 
-MONGODB_HOST=localhost
-MONGODB_PORT=27017
-MONGODB_DATABASE=parking_logs
+MONGODB_HOST=
+MONGODB_PORT=
+MONGODB_DATABASE=
 
 # JWT Configuration
 
@@ -92,8 +91,8 @@ JWT_EXPIRATION_TIME=3600
 
 # Application Configuration
 
-PORT=3000
-NODE_ENV=development
+PORT=
+NODE_ENV=
 
 ```
 
@@ -121,8 +120,8 @@ Si se tienen scripts para migraciones o semillas, ejecutar para crear esquemas y
 
 ```
 
-npm run migration:run     \# o el comando equivalente configurado
-npm run seed              \# para crear usuarios admin, empleado y cliente
+pnpm run migration:run     \# o el comando equivalente configurado
+pnpm run seed              \# para crear usuarios admin, empleado y cliente
 
 ```
 
@@ -132,7 +131,7 @@ Arrancar el servidor NestJS:
 
 ```
 
-npm run start:dev
+pnpm run start:dev
 
 ```
 
@@ -169,13 +168,6 @@ Para detalles avanzados, puede consultar la documentación técnica más detalla
 Este proyecto proporciona un sistema robusto y seguro para la gestión integral de parkings, combinando una arquitectura modular con autenticación, roles y auditoría completa con logs almacenados en MongoDB.
 ```
 
-<span style="display:none">[^1][^2][^3]</span>
-
 <div style="text-align: center">⁂</div>
 
-[^1]: API-parking.pdf
-
-[^2]: Proyecto-etapa-6.md
-
-[^3]: paste-3.txt
 
