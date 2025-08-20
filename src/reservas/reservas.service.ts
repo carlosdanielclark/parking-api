@@ -200,23 +200,53 @@ export class ReservasService {
    * @param currentUser - Usuario autenticado
    * @returns Reserva cancelada
    */
-  async cancel(id: string, currentUser: any): Promise<Reserva> {
-    this.logger.log(`Cancelando reserva ${id} por usuario ${currentUser.userId}`);
+  async cancel(reservaId: string, currentUser: any): Promise<Reserva> {
+    this.logger.log(`Cancelando reserva ${reservaId} por usuario ${currentUser.userId}`);
+
+    const reserva = await this.reservaRepository.findOne({
+      where: { id: reservaId },
+      relations: ['usuario', 'plaza', 'vehiculo']
+    });
+
+    if (!reserva) {
+      throw new NotFoundException('Reserva no encontrada');
+    }
+
+    // Validar permisos
+    if (currentUser.role !== UserRole.ADMIN && reserva.usuario.id !== currentUser.userId) {
+      throw new ForbiddenException('Solo puedes cancelar tus propias reservas');
+    }
+
+    if (reserva.estado !== EstadoReserva.ACTIVA) {
+      throw new BadRequestException('Solo se pueden cancelar reservas activas');
+    }
 
     try {
-      const reservaCancelada = await this.reservaTransactionService.cancelReservaWithTransaction(
-        id, 
-        currentUser
+      // Actualizar estado de reserva y plaza
+      reserva.estado = EstadoReserva.CANCELADA;
+      await this.reservaRepository.save(reserva);
+
+      await this.plazaRepository.update(reserva.plaza.id, {
+        estado: EstadoPlaza.LIBRE
+      });
+
+      // Logging de cancelación
+      await this.loggingService.logReservationCancelled(
+        currentUser.userId,
+        reserva.id,
+        reserva.plaza.id,
+        { razon: 'Cancelada por usuario' }
       );
 
-      this.logger.log(`Reserva cancelada exitosamente: ${id}`);
-      
-      return reservaCancelada;
+      this.logger.log(`Reserva cancelada exitosamente: ${reservaId}`);
+      return reserva;
+
     } catch (error) {
-      this.logger.error(`Error al cancelar reserva ${id}: ${error.message}`, error.stack);
-      throw error;
+      this.logger.error(`Error al cancelar reserva ${reservaId}: ${error.message}`, error.stack);
+      throw new BadRequestException('Error interno al cancelar reserva');
     }
   }
+
 
   /**
    * Finalizar reserva (marcar como completada)
@@ -225,17 +255,13 @@ export class ReservasService {
    * @param id - ID de la reserva a finalizar
    * @returns Reserva finalizada
    */
-  async finish(id: string): Promise<Reserva> {
-    this.logger.log(`Finalizando reserva ${id}`);
+  async finish(reservaId: string): Promise<Reserva> {
+    this.logger.log(`Finalizando reserva: ${reservaId}`);
 
     try {
-      const reservaFinalizada = await this.reservaTransactionService.finishReservaWithTransaction(id);
-
-      this.logger.log(`Reserva finalizada exitosamente: ${id}`);
-      
-      return reservaFinalizada;
+      return await this.reservaTransactionService.finalizarReservaWithTransaction(reservaId);
     } catch (error) {
-      this.logger.error(`Error al finalizar reserva ${id}: ${error.message}`, error.stack);
+      this.logger.error(`Error al finalizar reserva ${reservaId}: ${error.message}`, error.stack);
       throw error;
     }
   }

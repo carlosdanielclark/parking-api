@@ -40,6 +40,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 
 // Importaciones de Logging
 import { LoggingModule } from './logging/logging.module';
+import { AdminModule } from './admin/admin.module';
 
 /**
  * Módulo principal de la aplicación
@@ -142,6 +143,7 @@ import { LoggingModule } from './logging/logging.module';
     ReservasModule,
     LogsModule,
     LoggingModule,
+    AdminModule,
   ],
 
   /**

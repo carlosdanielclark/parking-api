@@ -5,6 +5,7 @@ import { Log, LogLevel, LogAction } from '../schemas/log.schema';
 
 /**
  * Servicio centralizado de logging para auditoría del sistema
+ * ✅ CORREGIDO: Importaciones y métodos validados
  * Registra eventos críticos en MongoDB para trazabilidad
  * Proporciona métodos especializados para cada tipo de evento
  */
@@ -18,6 +19,7 @@ export class LoggingService {
 
   /**
    * Método genérico para registrar logs
+   * ✅ MEJORADO: Validación de parámetros y manejo de errores
    */
   async log(
     level: LogLevel,
@@ -136,7 +138,9 @@ export class LoggingService {
     );
   }
 
-  // ✅ MÉTODO AGREGADO
+  /**
+   * ✅ CRÍTICO: Método para cambio de rol (resuelve error ROLE_CHANGE)
+   */
   async logRoleChange(
     adminUserId: string, 
     targetUserId: string, 
@@ -155,11 +159,9 @@ export class LoggingService {
     );
   }
 
-
   /**
    * Registrar actualización de usuario
    */
-  // ✅ MÉTODO RENOMBRADO: logUserUpdate -> logUserUpdated
   async logUserUpdated(
     adminUserId: string, 
     targetUserId: string, 
@@ -170,7 +172,7 @@ export class LoggingService {
     await this.log(
       LogLevel.INFO, 
       LogAction.UPDATE_USER, 
-      `Administrador ${adminUserId} actualizó usuario ${targetUserId}`, // ✅ MENSAJE AGREGADO
+      `Administrador ${adminUserId} actualizó usuario ${targetUserId}`,
       adminUserId, 
       'user', 
       targetUserId, 
@@ -198,7 +200,7 @@ export class LoggingService {
   }
 
   /**
-   * Registrar errores del sistema
+   * ✅ AGREGADO: Método para errores del sistema
    */
   async logSystemError(
     error: Error,
