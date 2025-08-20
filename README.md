@@ -1,4 +1,4 @@
-
+```Markdown
 # API de Parking
 
 ## Descripción del proyecto
@@ -9,7 +9,7 @@ API RESTful construida con Node.js y NestJS para la gestión completa de un sist
 
 ## Estructura del proyecto
 
-```text
+```
 parking-app/
 ├── dist/                           \# Archivos compilados
 ├── node_modules/                   \# Dependencias del proyecto
@@ -68,7 +68,7 @@ Asegúrese de configurar el archivo `.env` en la raíz del proyecto con los sigu
 
 ```
 
-
+```
 # PostgreSQL Configuration
 
 POSTGRES_HOST=
@@ -92,25 +92,19 @@ JWT_EXPIRATION_TIME=3600
 
 PORT=
 NODE_ENV=
-
 ```
+
 
 ### Instalación de dependencias
 
 Ejecutar el comando para instalar todas las dependencias:
 
 ```
-
 npm install
-
 ```
-
 o si usa pnpm:
-
 ```
-
 pnpm install
-
 ```
 
 ### Ejecutar migraciones y sembrar datos iniciales
@@ -118,12 +112,10 @@ pnpm install
 Si se tienen scripts para migraciones o semillas, ejecutar para crear esquemas y usuarios iniciales (incluye admin y usuarios de prueba).
 
 ```
-
 pnpm run migration:run     \# o el comando equivalente configurado
 pnpm run seed              \# para crear usuarios admin, empleado y cliente
 
 ```
-
 ### Iniciar la aplicación localmente
 
 Arrancar el servidor NestJS:
@@ -165,7 +157,7 @@ Para detalles avanzados, puede consultar la documentación técnica más detalla
 ---
 
 Este proyecto proporciona un sistema robusto y seguro para la gestión integral de parkings, combinando una arquitectura modular con autenticación, roles y auditoría completa con logs almacenados en MongoDB.
-
+```
 <div style="text-align: center">⁂</div>
 
 
