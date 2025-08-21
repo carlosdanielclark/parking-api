@@ -1,48 +1,14 @@
+
+# 🚗 API de Parking
+
+## 📋 Descripción del proyecto
 ```markdown
-# API de Parking
-
-## Descripción del proyecto
-
 API RESTful construida con Node.js y NestJS para la gestión completa de un sistema de aparcamiento. La aplicación permite reservar plazas de parking para vehículos, consultar la ocupación actual, gestionar usuarios con roles administrativos, empleados y clientes, y acceder a logs detallados de auditoría. Utiliza autenticación basada en JWT y autorización por roles para controlar el acceso a las funcionalidades. La persistencia combina PostgreSQL para las entidades principales y MongoDB para almacenar logs de actividad.
 
+```
 ---
 
-## Estructura del proyecto
-
-```
-
-parking-app/
-├── dist/                           \# Archivos compilados
-├── node_modules/                   \# Dependencias del proyecto
-├── src/                           \# Código fuente principal
-│   ├── admin/                     \# Módulo y controladores para administración de logs y dashboard
-│   ├── auth/                      \# Autenticación JWT y autorización por roles
-│   ├── users/                     \# Gestión CRUD de usuarios
-│   ├── plazas/                    \# Gestión de plazas de parking
-│   ├── vehiculos/                 \# Gestión de vehículos
-│   ├── reservas/                  \# Gestión de reservas de plaza
-│   ├── logs/                      \# Consulta y gestión de logs
-│   ├── logging/                   \# Servicio centralizado de logging con MongoDB
-│   ├── config/                    \# Configuración de la aplicación y variables de entorno
-│   ├── database/                  \# Servicios para conexión y pruebas de bases de datos
-│   ├── entities/                  \# Entidades para TypeORM (User, Plaza, Vehiculo, Reserva)
-│   ├── schemas/                   \# Esquema de logs para Mongoose
-│   ├── helpers/                   \# Helpers y validaciones
-│   ├── testing/                   \# Pruebas unitarias y e2e específicas
-│   ├── app.controller.ts          \# Controlador raíz
-│   ├── app.module.ts              \# Módulo raíz que integra todos los módulos
-│   └── main.ts                   \# Punto de entrada de la aplicación
-├── test/                         \# Pruebas E2E y configuración de tests
-├── .env                          \# Variables de entorno para configuración local
-├── package.json                  \# Configuración de NPM y scripts
-├── README.md                     \# Documentación del proyecto (actual)
-└── tsconfig.json                 \# Configuración de TypeScript
-
-```
-
----
-
-## Pasos para ejecutar el proyecto de manera local
+## Instrucciones de Instalación y Ejecución 
 
 ### Requisitos previos
 
@@ -52,14 +18,18 @@ parking-app/
 - MongoDB instalado y en funcionamiento
 - Configuración correcta de las variables de entorno (ver `.env`)
 
+### Clona el repositorio
+
+```bash
+git clone https://github.com/carlosdanielclark/parking-api
+```
+
 ### Configuración de la base de datos
 
 1. Crear la base de datos en PostgreSQL (por ejemplo `parking_db`).
 
-```
-
+```bash
 createdb parking_db
-
 ```
 
 2. Asegurar que MongoDB está corriendo y accesible (configurado por defecto en `localhost:27017`).
@@ -69,74 +39,63 @@ createdb parking_db
 Asegúrese de configurar el archivo `.env` en la raíz del proyecto con los siguientes valores ajustados a su entorno:
 
 ```
-
-
 # PostgreSQL Configuration
-
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USERNAME=admin
-POSTGRES_PASSWORD=admin
-POSTGRES_DATABASE=parking_db
+POSTGRES_USERNAME=
+POSTGRES_PASSWORD=
+POSTGRES_DATABASE=
 
 # MongoDB Configuration
-
 MONGODB_HOST=localhost
 MONGODB_PORT=27017
-MONGODB_DATABASE=parking_logs
+MONGODB_DATABASE=
 
 # JWT Configuration
-
-JWT_SECRET=tu_jwt_secret_super_seguro_aquí
-JWT_EXPIRATION_TIME=3600
+JWT_SECRET=
+JWT_EXPIRATION_TIME=
 
 # Application Configuration
-
 PORT=3000
-NODE_ENV=development
-
+NODE_ENV=
 ```
 
 ### Instalación de dependencias
 
 Ejecutar el comando para instalar todas las dependencias:
 
-```
-
+```bash
 npm install
-
 ```
 
 o si usa pnpm:
 
-```
-
+```bash
 pnpm install
-
 ```
 
-### Ejecutar migraciones y sembrar datos iniciales
+### (Opcional) Ejecutar migraciones y sembrar datos iniciales
 
 Si se tienen scripts para migraciones o semillas, ejecutar para crear esquemas y usuarios iniciales (incluye admin y usuarios de prueba).
 
-```
-
-npm run migration:run     \# o el comando equivalente configurado
-npm run seed              \# para crear usuarios admin, empleado y cliente
-
+```bash
+pnpm run migration:run     \# o el comando equivalente configurado
+pnpm run seed              \# para crear usuarios admin, empleado y cliente
 ```
 
 ### Iniciar la aplicación localmente
 
 Arrancar el servidor NestJS:
 
-```
-
-npm run start:dev
-
+```bash
+pnpm run start:dev
 ```
 
 El servidor quedará escuchando por defecto en `http://localhost:3000`.
+
+Para ver Swagger:
+
+ * Navega a http://localhost:3000/api/docs
 
 ### Uso de la API
 
@@ -152,10 +111,8 @@ El servidor quedará escuchando por defecto en `http://localhost:3000`.
 
 Se incluyen pruebas end-to-end automatizadas usando Jest y Supertest. Para ejecutar el suite completo:
 
-```
-
-npm run test:e2e
-
+```bash
+pnpm run test:e2e
 ```
 
 Esto garantiza que todos los casos de uso funcionan correctamente en un entorno controlado.
@@ -167,15 +124,19 @@ Para detalles avanzados, puede consultar la documentación técnica más detalla
 ---
 
 Este proyecto proporciona un sistema robusto y seguro para la gestión integral de parkings, combinando una arquitectura modular con autenticación, roles y auditoría completa con logs almacenados en MongoDB.
-```
 
-<span style="display:none">[^1][^2][^3]</span>
+---
+## Imagenes 
+![Descripción](images/swagger.png)
 
-<div style="text-align: center">⁂</div>
+---
 
-[^1]: API-parking.pdf
+![Descripción](images/swagger-g.png)
 
-[^2]: Proyecto-etapa-6.md
+---
 
-[^3]: paste-3.txt
+![Descripción](images/swagger-h.png)
 
+---
+
+![Descripción](images/console.png)

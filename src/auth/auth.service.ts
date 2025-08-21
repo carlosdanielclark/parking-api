@@ -7,7 +7,7 @@ import { User, UserRole } from '../entities/user.entity';
 import { RegisterDto } from './dto/register-dto';
 import { LoginDto } from './dto/login-dto';
 import { authConstants } from './constants';
-import { LoggingService } from 'src/logging/logging.service';
+import { LoggingService } from '../../src/logging/logging.service';
 
 /**
  * Servicio de autenticación y registro de usuarios

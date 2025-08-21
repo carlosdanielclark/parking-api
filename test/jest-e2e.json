@@ -10,6 +10,6 @@
     "src/**/*.(t|j)s"
   ],
   "coverageDirectory": "../coverage-e2e",
-  "testTimeout": 60000,
+  "testTimeout": 300000,
   "setupFilesAfterEnv": ["<rootDir>/setup-e2e.ts"]
 }

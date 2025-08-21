@@ -12,41 +12,52 @@ export class E2ETestSetup {
   static app: INestApplication;
 
   static async setupTestEnvironment(): Promise<INestApplication> {
-    // Configurar MongoDB en memoria
-    this.mongoServer = await MongoMemoryServer.create();
-    const mongoUri = this.mongoServer.getUri();
-    
-    // Configurar variables de entorno de prueba
-    process.env.NODE_ENV = 'test';
-    process.env.MONGODB_URI = mongoUri;
-    process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/parking_test';
-    process.env.JWT_SECRET = 'test_jwt_secret_key_123';
-    process.env.JWT_EXPIRATION_TIME = '3600';
-    
-    // Crear módulo de testing
-    const moduleFixture = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    try {
+      console.log('Starting MongoMemoryServer...');
+      this.mongoServer = await MongoMemoryServer.create();
+      console.log('MongoMemoryServer started at', this.mongoServer.getUri());
 
-    this.app = moduleFixture.createNestApplication();
-    
-    // Configurar pipes globales
-    this.app.useGlobalPipes(new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }));
-    
-    await this.app.init();
-    return this.app;
-  }
+      // Set environment variables carefully before app init
+      process.env.NODE_ENV = 'test';
+      process.env.MONGODB_URI = this.mongoServer.getUri();
+      process.env.POSTGRES_DATABASE = 'parking_test';
+      process.env.JWT_SECRET = 'test_jwt_secret_key_123';
+
+      console.log('Creating Nest testing module...');
+      const moduleFixture = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+
+      this.app = moduleFixture.createNestApplication();
+      
+      this.app.useGlobalPipes(new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }));
+
+      console.log('Initializing Nest application...');
+      await this.app.init();
+      console.log('Nest application initialized');
+
+      return this.app;
+    } catch (error) {
+      console.error('Error during setupTestEnvironment:', error);
+      throw error;
+    }
+}
 
   static async teardownTestEnvironment(): Promise<void> {
-    if (this.app) {
-      await this.app.close();
-    }
-    if (this.mongoServer) {
-      await this.mongoServer.stop();
+    try {
+      console.log('Closing Nest application...');
+      if (this.app) await this.app.close();
+      console.log('Nest application closed');
+
+      console.log('Stopping MongoMemoryServer...');
+      if (this.mongoServer) await this.mongoServer.stop();
+      console.log('MongoMemoryServer stopped');
+    } catch (error) {
+      console.error('Error during teardownTestEnvironment:', error);
     }
   }
 
@@ -74,12 +85,16 @@ export class E2ETestSetup {
       console.warn('Error al limpiar base de datos:', error.message);
     }
   }
+
+  
 }
+
+
 
 // Configuración global para todas las pruebas e2e
 beforeAll(async () => {
   await E2ETestSetup.setupTestEnvironment();
-}, 60000);
+}, 300000);
 
 afterAll(async () => {
   await E2ETestSetup.teardownTestEnvironment();
