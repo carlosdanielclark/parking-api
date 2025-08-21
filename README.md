@@ -2,43 +2,8 @@
 # 🚗 API de Parking
 
 ## 📋 Descripción del proyecto
-```markdown
+
 API RESTful construida con Node.js y NestJS para la gestión completa de un sistema de aparcamiento. La aplicación permite reservar plazas de parking para vehículos, consultar la ocupación actual, gestionar usuarios con roles administrativos, empleados y clientes, y acceder a logs detallados de auditoría. Utiliza autenticación basada en JWT y autorización por roles para controlar el acceso a las funcionalidades. La persistencia combina PostgreSQL para las entidades principales y MongoDB para almacenar logs de actividad.
-
----
-
-## Estructura del proyecto
-
-```
-
-parking-app/
-├── dist/                           \# Archivos compilados
-├── node_modules/                   \# Dependencias del proyecto
-├── src/                           \# Código fuente principal
-│   ├── admin/                     \# Módulo y controladores para administración de logs y dashboard
-│   ├── auth/                      \# Autenticación JWT y autorización por roles
-│   ├── users/                     \# Gestión CRUD de usuarios
-│   ├── plazas/                    \# Gestión de plazas de parking
-│   ├── vehiculos/                 \# Gestión de vehículos
-│   ├── reservas/                  \# Gestión de reservas de plaza
-│   ├── logs/                      \# Consulta y gestión de logs
-│   ├── logging/                   \# Servicio centralizado de logging con MongoDB
-│   ├── config/                    \# Configuración de la aplicación y variables de entorno
-│   ├── database/                  \# Servicios para conexión y pruebas de bases de datos
-│   ├── entities/                  \# Entidades para TypeORM (User, Plaza, Vehiculo, Reserva)
-│   ├── schemas/                   \# Esquema de logs para Mongoose
-│   ├── helpers/                   \# Helpers y validaciones
-│   ├── testing/                   \# Pruebas unitarias y e2e específicas
-│   ├── app.controller.ts          \# Controlador raíz
-│   ├── app.module.ts              \# Módulo raíz que integra todos los módulos
-│   └── main.ts                   \# Punto de entrada de la aplicación
-├── test/                         \# Pruebas E2E y configuración de tests
-├── .env                          \# Variables de entorno para configuración local
-├── package.json                  \# Configuración de NPM y scripts
-├── README.md                     \# Documentación del proyecto (actual)
-└── tsconfig.json                 \# Configuración de TypeScript
-
-```
 
 ---
 
@@ -73,22 +38,19 @@ createdb parking_db
 Asegúrese de configurar el archivo `.env` en la raíz del proyecto con los siguientes valores ajustados a su entorno:
 
 ```
-```
-
-```
 # PostgreSQL Configuration
 
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USERNAME=admin
-POSTGRES_PASSWORD=admin
+POSTGRES_USERNAME=
+POSTGRES_PASSWORD=
 POSTGRES_DATABASE=parking_db
 
 # MongoDB Configuration
 
 MONGODB_HOST=localhost
 MONGODB_PORT=27017
-MONGODB_DATABASE=parking_logs
+MONGODB_DATABASE=parking_mongo
 
 # JWT Configuration
 JWT_SECRET=
@@ -107,7 +69,6 @@ NODE_ENV=development
 Ejecutar el comando para instalar todas las dependencias:
 
 ```
-
 npm install
 ```
 o si usa pnpm:
