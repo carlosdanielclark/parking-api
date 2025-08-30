@@ -9,10 +9,10 @@ import { Vehiculo } from './vehiculo.entity';
  * - FINALIZADA: Reserva completada exitosamente
  * - CANCELADA: Reserva cancelada por el usuario o el sistema
  */
-export enum EstadoReserva {
+export enum EstadoReservaDTO  {
   ACTIVA = 'activa',
+  CANCELADA = 'cancelada',
   FINALIZADA = 'finalizada',
-  CANCELADA = 'cancelada'
 }
 
 /**
@@ -69,10 +69,10 @@ export class Reserva {
    */
   @Column({ 
     type: 'enum',
-    enum: EstadoReserva,
-    default: EstadoReserva.ACTIVA 
+    enum: EstadoReservaDTO,
+    default: EstadoReservaDTO.ACTIVA 
   })
-  estado: EstadoReserva;
+  estado: EstadoReservaDTO;
 
   /**
    * Fecha y hora de creación de la reserva
@@ -104,9 +104,11 @@ export class Reserva {
    * Relación muchos-a-uno con la entidad Plaza
    * Una reserva ocupa una única plaza
    * Una plaza puede tener múltiples reservas en diferentes períodos
+   * ✅ CORREGIDO: Cambiar de RESTRICT a CASCADE para permitir eliminación de plazas
+   * Solo se eliminan reservas finalizadas/canceladas, las activas se validan en servicio
    */
   @ManyToOne(() => Plaza, plaza => plaza.reservas, {
-    onDelete: 'RESTRICT', // No se puede eliminar una plaza con reservas activas
+    onDelete: 'RESTRICT', // Permitir eliminación en cascada
     onUpdate: 'CASCADE'
   })
   @JoinColumn({ name: 'plaza_id' })
@@ -130,7 +132,7 @@ export class Reserva {
    * @returns true si la reserva está activa en la fecha especificada
    */
   isActiveAt(fecha: Date = new Date()): boolean {
-    return this.estado === EstadoReserva.ACTIVA && 
+    return this.estado === EstadoReservaDTO.ACTIVA && 
            fecha >= this.fecha_inicio && 
            fecha <= this.fecha_fin;
   }

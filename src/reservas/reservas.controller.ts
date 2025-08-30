@@ -1,5 +1,4 @@
 // src/reservas/reservas.controller.ts
-
 import { 
   Controller, 
   Get, 
@@ -12,7 +11,8 @@ import {
   Query,
   HttpCode, 
   HttpStatus,
-  Logger 
+  Logger, 
+  UseInterceptors
 } from '@nestjs/common';
 import { ReservasService } from './reservas.service';
 import { CreateReservaDto } from './dto/create-reserva.dto';
@@ -22,6 +22,9 @@ import * as getUserDecorator from '../auth/decorators/get-user.decorator';
 import { UserRole } from '../entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { AuditInterceptor } from '../logging/audit.interceptor';
+import { AuditAction } from 'src/logging/audit-action.decorator';
+import { LogAction } from 'src/schemas/log.schema';
 
 /**
  * Controlador para la gestión de reservas de parking
@@ -30,6 +33,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
  */
 @Controller('reservas')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UseInterceptors(AuditInterceptor)
 export class ReservasController {
   private readonly logger = new Logger(ReservasController.name);
 
@@ -46,6 +50,7 @@ export class ReservasController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @AuditAction(LogAction.CREATE_RESERVATION)
   async create(
     @Body() createReservaDto: CreateReservaDto,
     @getUserDecorator.GetUser() currentUser: getUserDecorator.AuthenticatedUser

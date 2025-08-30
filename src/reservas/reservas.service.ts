@@ -1,9 +1,8 @@
 // src/reservas/reservas.service.ts
-
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Reserva, EstadoReserva } from '../entities/reserva.entity';
+import { Reserva, EstadoReservaDTO } from '../entities/reserva.entity';
 import { Plaza, EstadoPlaza } from '../entities/plaza.entity';
 import { User, UserRole } from '../entities/user.entity';
 import { Vehiculo } from '../entities/vehiculo.entity';
@@ -178,7 +177,7 @@ export class ReservasService {
 
     try {
       const reservasActivas = await this.reservaRepository.find({
-        where: { estado: EstadoReserva.ACTIVA },
+        where: { estado: EstadoReservaDTO.ACTIVA },
         relations: ['usuario', 'plaza', 'vehiculo'],
         order: { fecha_inicio: 'ASC' }
       });
@@ -217,13 +216,13 @@ export class ReservasService {
       throw new ForbiddenException('Solo puedes cancelar tus propias reservas');
     }
 
-    if (reserva.estado !== EstadoReserva.ACTIVA) {
+    if (reserva.estado !== EstadoReservaDTO.ACTIVA) {
       throw new BadRequestException('Solo se pueden cancelar reservas activas');
     }
 
     try {
       // Actualizar estado de reserva y plaza
-      reserva.estado = EstadoReserva.CANCELADA;
+      reserva.estado = EstadoReservaDTO.CANCELADA;
       await this.reservaRepository.save(reserva);
 
       await this.plazaRepository.update(reserva.plaza.id, {

@@ -4,7 +4,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PlazasService } from './plazas.service';
 import { PlazasController } from './plazas.controller';
+import { OcupacionController } from './controllers/ocupacion.controller';
+import { OcupacionService } from './services/ocupacion.service';
 import { Plaza } from '../entities/plaza.entity';
+import { Reserva } from '../entities/reserva.entity';
 
 /**
  * Módulo de gestión de plazas de parking
@@ -14,13 +17,14 @@ import { Plaza } from '../entities/plaza.entity';
 @Module({
   imports: [
     // Registra la entidad Plaza para uso con TypeORM
-    TypeOrmModule.forFeature([Plaza])
+    TypeOrmModule.forFeature([Plaza, Reserva])
   ],
-  controllers: [PlazasController],
-  providers: [PlazasService],
+  controllers: [PlazasController, OcupacionController],
+  providers: [PlazasService, OcupacionService],
   exports: [
     PlazasService, // Exporta el servicio para uso en el módulo de reservas
-    TypeOrmModule  // Exporta el módulo TypeORM para compartir el repositorio
+    OcupacionService,
+    TypeOrmModule,  // Exporta el módulo TypeORM para compartir el repositorio
   ],
 })
 export class PlazasModule {}

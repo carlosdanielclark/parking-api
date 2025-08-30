@@ -37,37 +37,27 @@ export class UsersService {
   async create(createUserDto: CreateUserDto): Promise<Partial<User>> {
     const { email, password, ...userData } = createUserDto;
 
-    this.logger.log(`Creando usuario con email: ${email}`);
+    this.logger.log(`Creating user with email: ${email}`);
 
-    // Verificar si el email ya existe en el sistema
     const existingUser = await this.userRepository.findOne({ where: { email } });
     if (existingUser) {
-      this.logger.warn(`Intento de creación con email duplicado: ${email}`);
-      throw new BadRequestException('El email ya está registrado en el sistema');
+      this.logger.warn(`Duplicate email on create: ${email}`);
+      throw new BadRequestException('Email is already registered');
     }
 
     try {
-      // Encriptar la contraseña usando bcrypt
-      const hashedPassword = await bcrypt.hash(password, authConstants.saltRounds);
+      const hashed = await bcrypt.hash(password, authConstants.saltRounds);
+      const user = this.userRepository.create({ ...userData, email, password: hashed });
 
-      // Crear la entidad usuario
-      const newUser = this.userRepository.create({
-        ...userData,
-        email,
-        password: hashedPassword,
-      });
+      const saved = await this.userRepository.save(user);
 
-      // Guardar en la base de datos
-      const savedUser = await this.userRepository.save(newUser);
-      
-      this.logger.log(`Usuario creado exitosamente: ${savedUser.id} - ${savedUser.email} (${savedUser.role})`);
+      this.logger.log(`User created: ${saved.id} (${saved.email}), role: ${saved.role}`);
 
-      // Retornar usuario sin contraseña por seguridad
-      const { password: _, ...result } = savedUser;
+      const { password: _, ...result } = saved;
       return result;
-    } catch (error) {
-      this.logger.error(`Error al crear usuario: ${error.message}`, error.stack);
-      throw new BadRequestException('Error interno al crear usuario');
+    } catch (e) {
+      this.logger.error(`Error creating user ${email}: ${e.message}`, e.stack);
+      throw new BadRequestException('Internal error creating user');
     }
   }
 
@@ -79,22 +69,22 @@ export class UsersService {
    * @returns Lista de usuarios sin contraseñas
    */
   async findAll(): Promise<Partial<User>[]> {
-    this.logger.log('Obteniendo lista de todos los usuarios');
-    
+    this.logger.log('Fetching all users');
+
     try {
-      const users = await this.userRepository.find({
-        order: { created_at: 'DESC' }
+      const users = await this.userRepository.find({ order: { created_at: 'DESC' } });
+      this.logger.log(`Found ${users.length} users`);
+
+      return users.map(u => {
+        const { password, ...rest } = u;
+        return rest;
       });
-      
-      this.logger.log(`Se encontraron ${users.length} usuarios`);
-      
-      // Remover contraseñas de todos los usuarios
-      return users.map(({ password, ...user }) => user);
-    } catch (error) {
-      this.logger.error(`Error al obtener usuarios: ${error.message}`, error.stack);
-      throw new BadRequestException('Error interno al obtener usuarios');
+    } catch (e) {
+      this.logger.error(`Error fetching users: ${e.message}`, e.stack);
+      throw new BadRequestException('Internal error fetching users');
     }
   }
+
 
   /**
    * Obtiene un usuario específico por su ID
@@ -105,30 +95,27 @@ export class UsersService {
    * @throws NotFoundException si el usuario no existe
    */
   async findOne(id: string): Promise<Partial<User>> {
-    this.logger.log(`Buscando usuario con ID: ${id}`);
+    this.logger.log(`Fetching user ${id}`);
 
     try {
-      const user = await this.userRepository.findOne({ 
+      const user = await this.userRepository.findOne({
         where: { id },
-        relations: ['vehiculos', 'reservas']
+        relations: ['vehiculos', 'reservas'],
       });
-      
+
       if (!user) {
-        this.logger.warn(`Usuario no encontrado con ID: ${id}`);
-        throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
+        this.logger.warn(`User not found: ${id}`);
+        throw new NotFoundException(`User not found: ${id}`);
       }
 
-      this.logger.log(`Usuario encontrado: ${user.email} (${user.role})`);
-      
-      // Retornar sin contraseña
+      this.logger.log(`User found: ${user.email} (${user.role})`);
+
       const { password, ...result } = user;
       return result;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      this.logger.error(`Error al buscar usuario ${id}: ${error.message}`, error.stack);
-      throw new BadRequestException('Error interno al buscar usuario');
+    } catch (e) {
+      if (e instanceof NotFoundException) throw e;
+      this.logger.error(`Error fetching user ${id}: ${e.message}`, e.stack);
+      throw new BadRequestException('Internal error fetching user');
     }
   }
 
@@ -159,7 +146,6 @@ export class UsersService {
     this.logger.log(`Actualizando usuario ${id} por usuario ${currentUser.userId} (${currentUser.role})`);
 
     // Verificar permisos: solo admin puede actualizar cualquier usuario
-    // Los usuarios pueden actualizar su propio perfil
     if (currentUser.role !== UserRole.ADMIN && currentUser.userId !== id) {
       this.logger.warn(`Acceso denegado: usuario ${currentUser.userId} intentó actualizar usuario ${id}`);
       throw new ForbiddenException('No tienes permisos para actualizar este usuario');
@@ -177,6 +163,14 @@ export class UsersService {
       this.logger.warn(`Intento de actualización de usuario inexistente: ${id}`);
       throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
     }
+
+    // ✅ AGREGADO: Guardar estado anterior para logging
+    const previousState = {
+      nombre: user.nombre,
+      email: user.email,
+      telefono: user.telefono,
+      role: user.role
+    };
 
     try {
       // Encriptar nueva contraseña si se proporciona
@@ -196,14 +190,39 @@ export class UsersService {
         }
       }
 
+      // ✅ CRÍTICO: Logging del cambio de rol ANTES de la actualización
+      if (updateUserDto.role && updateUserDto.role !== user.role) {
+        await this.loggingService.logRoleChange(
+          currentUser.userId,
+          user.id,
+          user.role,
+          updateUserDto.role
+        );
+      }
+
       // Actualizar usuario
       await this.userRepository.update(id, updateUserDto);
       const updatedUser = await this.userRepository.findOne({ where: { id } });
       
-      //Verifica que updatedUser no sea null antes de acceder a sus propiedades.
       if (!updatedUser) {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado tras actualización`);
       }
+
+      // ✅ AGREGADO: Logging de la actualización general
+      const newState = {
+        nombre: updatedUser.nombre,
+        email: updatedUser.email,
+        telefono: updatedUser.telefono,
+        role: updatedUser.role
+      };
+
+      await this.loggingService.logUserUpdated(
+        currentUser.userId,
+        user.id,
+        previousState,
+        newState,
+        'Actualización de perfil de usuario'
+      );
 
       this.logger.log(`Usuario actualizado exitosamente: ${updatedUser.id} - ${updatedUser.email}`);
 
@@ -211,7 +230,7 @@ export class UsersService {
       const { password: _, ...result } = updatedUser;
       return result;
     } catch (error) {
-      if (error instanceof BadRequestException) {
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
         throw error;
       }
       this.logger.error(`Error al actualizar usuario ${id}: ${error.message}`, error.stack);
@@ -253,20 +272,20 @@ export class UsersService {
    * @returns Lista de usuarios con el rol especificado
    */
   async findByRole(role: UserRole): Promise<Partial<User>[]> {
-    this.logger.log(`Obteniendo usuarios con rol: ${role}`);
+    this.logger.log(`Find users by role: ${role}`);
 
     try {
-      const users = await this.userRepository.find({ 
+      const users = await this.userRepository.find({
         where: { role },
-        order: { created_at: 'DESC' }
+        order: { created_at: 'DESC' },
       });
-      
-      this.logger.log(`Se encontraron ${users.length} usuarios con rol ${role}`);
-      
-      return users.map(({ password, ...user }) => user);
-    } catch (error) {
-      this.logger.error(`Error al obtener usuarios por rol ${role}: ${error.message}`, error.stack);
-      throw new BadRequestException('Error interno al obtener usuarios por rol');
+      return users.map(u => {
+        const { password, ...rest } = u;
+        return rest;
+      });
+    } catch (e) {
+      this.logger.error(`Error finding users by role: ${e.message}`, e.stack);
+      throw new BadRequestException('Internal error finding users');
     }
   }
 
@@ -289,8 +308,8 @@ export class UsersService {
    * 
    * @returns Estadísticas de distribución de usuarios
    */
-  async getUserStats(): Promise<{total: number, admins: number, empleados: number, clientes: number}> {
-    this.logger.log('Obteniendo estadísticas de usuarios');
+  async getUserStats(): Promise<{total:number, admins:number, empleados:number, clientes:number}> {
+    this.logger.log('Getting user stats');
 
     try {
       const total = await this.userRepository.count();
@@ -298,15 +317,15 @@ export class UsersService {
       const empleados = await this.userRepository.count({ where: { role: UserRole.EMPLEADO } });
       const clientes = await this.userRepository.count({ where: { role: UserRole.CLIENTE } });
 
-      const stats = { total, admins, empleados, clientes };
-      this.logger.log(`Estadísticas de usuarios: ${JSON.stringify(stats)}`);
-      
-      return stats;
-    } catch (error) {
-      this.logger.error(`Error al obtener estadísticas de usuarios: ${error.message}`, error.stack);
-      throw new BadRequestException('Error interno al obtener estadísticas');
+      const result = { total, admins, empleados, clientes };
+      this.logger.log(`User stats: ${JSON.stringify(result)}`);
+      return result;
+    } catch (e) {
+      this.logger.error(`Error getting user stats: ${e.message}`, e.stack);
+      throw new BadRequestException('Internal error getting user stats');
     }
   }
+  
   async actualizarUsuario(id: string, updateDto: UpdateUserDto, adminUser: any) {
     // Obtener estado previo antes de cambios
     const usuarioPrevio = await this.userRepository.findOne({ where: { id } });
@@ -332,4 +351,5 @@ export class UsersService {
     );
     return usuarioActualizado;
   }
+
 }

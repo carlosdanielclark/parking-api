@@ -1,8 +1,7 @@
 // src/reservas/dto/create-reserva.dto.ts
-
-
-import { IsUUID, IsInt, IsDateString, IsOptional } from 'class-validator';
-import { Type, Transform } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsInt, IsUUID, Min, IsDateString, IsDate, IsNotEmpty } from 'class-validator';
 
 /**
  * DTO para la creación de reservas de parking
@@ -15,7 +14,8 @@ export class CreateReservaDto {
    * Debe ser un UUID válido de un usuario existente
    * El sistema validará que el usuario autenticado coincida (excepto admin)
    */
-  @IsUUID(4, { message: 'El ID del usuario debe ser un UUID válido' })
+  @ApiProperty({ description: 'UUID del usuario que reserva' })
+  @IsUUID('4', { message: 'usuario_id inválido (UUID v4)' })
   usuario_id: string;
 
   /**
@@ -23,8 +23,9 @@ export class CreateReservaDto {
    * Debe ser un número entero de una plaza existente y disponible
    * El sistema verificará disponibilidad y estado LIBRE
    */
-  @IsInt({ message: 'El ID de la plaza debe ser un número entero' })
-  @Type(() => Number)
+  @ApiProperty({ description: 'ID de la plaza (entero TypeORM)' })
+  @IsInt({ message: 'plaza_id debe ser entero' })
+  @Min(1, { message: 'plaza_id debe ser > 0' })
   plaza_id: number;
 
   /**
@@ -32,7 +33,8 @@ export class CreateReservaDto {
    * Debe ser un UUID válido de un vehículo del usuario
    * El sistema validará que el vehículo pertenezca al usuario
    */
-  @IsUUID(4, { message: 'El ID del vehículo debe ser un UUID válido' })
+  @ApiProperty({ description: 'UUID del vehículo' })
+  @IsUUID('4', { message: 'vehiculo_id inválido (UUID v4)' })
   vehiculo_id: string;
 
   /**
@@ -40,14 +42,18 @@ export class CreateReservaDto {
    * Debe ser una fecha futura válida en formato ISO
    * No puede ser en el pasado para evitar reservas inválidas
    */
-  @IsDateString({}, { message: 'La fecha de inicio debe ser una fecha válida en formato ISO' })
-  fecha_inicio: string;
+  @ApiProperty({ description: 'Fecha/hora de inicio (ISO 8601)' })
+  @Type(() => Date)
+  @IsDate()
+  fecha_inicio: Date;
 
   /**
    * Fecha y hora de finalización de la reserva
    * Debe ser una fecha futura válida en formato ISO
    * Debe ser posterior a la fecha de inicio
    */
-  @IsDateString({}, { message: 'La fecha de fin debe ser una fecha válida en formato ISO' })
-  fecha_fin: string;
+  @ApiProperty({ description: 'Fecha/hora de fin (ISO 8601)' })
+  @Type(() => Date)
+  @IsDate()
+  fecha_fin: Date;
 }

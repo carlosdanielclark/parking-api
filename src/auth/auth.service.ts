@@ -4,10 +4,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../entities/user.entity';
-import { RegisterDto } from './dto/register-dto';
-import { LoginDto } from './dto/login-dto';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 import { authConstants } from './constants';
-import { LoggingService } from '../../src/logging/logging.service';
+import { LoggingService } from '../logging/logging.service';
 
 /**
  * Servicio de autenticación y registro de usuarios

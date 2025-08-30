@@ -141,23 +141,23 @@ export class LoggingService {
   /**
    * ✅ CRÍTICO: Método para cambio de rol (resuelve error ROLE_CHANGE)
    */
-  async logRoleChange(
-    adminUserId: string, 
-    targetUserId: string, 
-    previousRole: string, 
-    newRole: string
-  ): Promise<void> {
-    await this.log(
-      LogLevel.WARN, 
-      LogAction.ROLE_CHANGE, 
-      `Administrador ${adminUserId} cambió rol de usuario ${targetUserId} de ${previousRole} a ${newRole}`,
-      adminUserId, 
-      'user', 
-      targetUserId, 
-      { previous_role: previousRole, new_role: newRole, changed_by: adminUserId, timestamp: new Date() }, 
-      { method: 'PATCH', resource_type: 'user_role', status: 'role_changed', critical_operation: true }
-    );
-  }
+async logRoleChange(adminUserId: string, targetUserId: string, previousRole: string, newRole: string): Promise<void> {
+  await this.log(
+    LogLevel.WARN,
+    LogAction.ROLE_CHANGE, 
+    `Administrator ${adminUserId} changed role of user ${targetUserId} from ${previousRole} to ${newRole}`,
+    adminUserId,
+    'user',
+    targetUserId,
+    {
+      previousRole,
+      newRole,
+      changedBy: adminUserId,
+      timestamp: new Date(),
+    },
+    { method: 'PATCH', resourceType: 'user_role', criticalOperation: true },
+  );
+}
 
   /**
    * Registrar actualización de usuario

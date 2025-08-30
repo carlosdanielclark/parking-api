@@ -1,8 +1,9 @@
+// src/plazas/services/ocupacion.service.ts
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Plaza, EstadoPlaza, TipoPlaza } from '../../entities/plaza.entity';
-import { Reserva, EstadoReserva } from '../../entities/reserva.entity';
+import { Reserva, EstadoReservaDTO } from '../../entities/reserva.entity';
 
 export interface OcupacionDetallada {
   total: number;
@@ -66,7 +67,7 @@ export class OcupacionService {
       const plazasPorTipo = await this.getEstadisticasPorTipo();
 
       const reservasActivas = await this.reservaRepository.count({
-        where: { estado: EstadoReserva.ACTIVA }
+        where: { estado: EstadoReservaDTO.ACTIVA }
       });
 
       const proximasLiberaciones = await this.getProximasLiberaciones();
@@ -127,7 +128,7 @@ export class OcupacionService {
       .createQueryBuilder('reserva')
       .leftJoinAndSelect('reserva.plaza', 'plaza')
       .leftJoinAndSelect('reserva.vehiculo', 'vehiculo')
-      .where('reserva.estado = :estado', { estado: EstadoReserva.ACTIVA })
+      .where('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
       .andWhere('reserva.fecha_fin BETWEEN :ahora AND :limite', {
         ahora: ahora,
         limite: dosPosHoras
@@ -141,7 +142,7 @@ export class OcupacionService {
       );
 
       return {
-        plaza_numero: reserva.plaza.numero_plaza,
+        plaza_numero: reserva.plaza.numero_plaza.toString(),
         fecha_liberacion: reserva.fecha_fin,
         tiempo_restante_minutos: tiempoRestante,
         vehiculo_placa: reserva.vehiculo?.placa || 'N/A',
@@ -164,7 +165,7 @@ export class OcupacionService {
       .addSelect('COUNT(*)', 'cantidad')
       .where('reserva.fecha_inicio >= :inicio', { inicio: fechaInicioSemana })
       .andWhere('reserva.estado IN (:...estados)', { 
-        estados: [EstadoReserva.ACTIVA, EstadoReserva.FINALIZADA] 
+        estados: [EstadoReservaDTO.ACTIVA, EstadoReservaDTO.FINALIZADA] 
       })
       .groupBy('EXTRACT(HOUR FROM reserva.fecha_inicio)')
       .getRawMany();

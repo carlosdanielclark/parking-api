@@ -70,7 +70,12 @@ import { AdminModule } from './admin/admin.module';
         password: configService.get<string>('database.postgres.password')!,
         database: configService.get<string>('database.postgres.database')!,
         entities: [User, Plaza, Vehiculo, Reserva],
-        synchronize: configService.get<string>('nodeEnv') === 'development',
+        
+        // 🔧 CORRECCIÓN: Deshabilitar synchronize y habilitar migraciones
+        synchronize: false, // Siempre false en producción
+        migrationsRun: true, // Ejecutar migraciones automáticamente
+        migrations: ['dist/migrations/*.js'], // Ruta de migraciones compiladas
+    
         logging: configService.get<string>('nodeEnv') === 'development' ? ['error', 'warn'] : ['error'],
         // Configuración del pool de conexiones
         extra: {

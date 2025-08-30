@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { Plaza, EstadoPlaza, TipoPlaza } from '../entities/plaza.entity';
 import { CreatePlazaDto } from './dto/create-plaza.dto';
 import { UpdatePlazaDto } from './dto/update-plaza.dto';
+import { EstadoReservaDTO } from 'src/entities/reserva.entity';
 
 /**
  * Servicio para la gestión completa de plazas de parking
@@ -49,8 +50,8 @@ export class PlazasService {
       // Crear nueva plaza con valores por defecto
       const plaza = this.plazaRepository.create({
         ...createPlazaDto,
-        estado: createPlazaDto.estado || EstadoPlaza.LIBRE,
-        tipo: createPlazaDto.tipo || TipoPlaza.NORMAL,
+        estado: createPlazaDto.estado ?? EstadoPlaza.LIBRE,
+        tipo: createPlazaDto.tipo ?? TipoPlaza.NORMAL,
       });
 
       const savedPlaza = await this.plazaRepository.save(plaza);
@@ -59,7 +60,10 @@ export class PlazasService {
       
       return savedPlaza;
     } catch (error) {
-      this.logger.error(`Error al crear plaza ${numero_plaza}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error al crear plaza ${numero_plaza}: ${error.message}`, 
+        error.stack
+      );
       throw new BadRequestException('Error interno al crear plaza');
     }
   }
@@ -186,7 +190,7 @@ export class PlazasService {
     try {
       // Verificar si tiene reservas activas
       const hasActiveReservations = plaza.reservas?.some(
-        reserva => reserva.estado === 'activa'
+        reserva => reserva.estado === EstadoReservaDTO.ACTIVA
       );
 
       if (hasActiveReservations) {

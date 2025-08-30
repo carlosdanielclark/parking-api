@@ -1,4 +1,5 @@
-import { Controller, Get, UseGuards, Query, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+// src/admin/controllers/admin-dashboard.controller.ts
+import { Controller, Get, UseGuards, HttpCode, HttpStatus, Logger } from '@nestjs/common';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { GetUser } from '../../auth/decorators/get-user.decorator';
 import type { AuthenticatedUser } from '../../auth/decorators/get-user.decorator';
@@ -9,7 +10,7 @@ import { LogsQueryService } from '../services/logs-query.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity';
-import { Reserva, EstadoReserva } from '../../entities/reserva.entity';
+import { Reserva, EstadoReservaDTO } from '../../entities/reserva.entity';
 import { Plaza, EstadoPlaza } from '../../entities/plaza.entity';
 import { LoggingService } from '../../logging/logging.service';
 import { LogLevel } from '../../schemas/log.schema';
@@ -79,7 +80,7 @@ export class AdminDashboardController {
         this.userRepository.count(),
         this.getUserStatistics(),
         this.reservaRepository.count(),
-        this.reservaRepository.count({ where: { estado: EstadoReserva.ACTIVA } }),
+        this.reservaRepository.count({ where: { estado: EstadoReservaDTO.ACTIVA } }),
         this.reservaRepository.count({ where: { created_at: MoreThan(hace24h) } }),
         this.reservaRepository.count({ where: { created_at: MoreThan(hace7d) } }),
         this.logsQueryService.getLogStatistics(7),

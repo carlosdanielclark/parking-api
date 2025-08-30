@@ -1,7 +1,9 @@
 // src/reservas/dto/update-reserva.dto.ts
 
-import { IsDateString, IsOptional, IsEnum } from 'class-validator';
-import { EstadoReserva } from '../../entities/reserva.entity';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsDate, IsEnum, IsOptional } from 'class-validator';
+import { EstadoReservaDTO  } from '../../entities/reserva.entity';
 
 /**
  * DTO para la actualización de reservas existentes
@@ -14,27 +16,31 @@ export class UpdateReservaDto {
    * Solo puede modificarse si la reserva está activa
    * Debe seguir siendo futura y anterior a fecha_fin
    */
+  @ApiPropertyOptional({ description: 'Nueva fecha/hora de inicio' })
   @IsOptional()
-  @IsDateString({}, { message: 'La fecha de inicio debe ser una fecha válida en formato ISO' })
-  fecha_inicio?: string;
+  @Type(() => Date)
+  @IsDate({ message: 'fecha_inicio debe ser Date válida' })
+  fecha_inicio?: Date;
+
 
   /**
    * Nueva fecha de finalización de la reserva (opcional)
    * Debe ser posterior a la fecha de inicio actualizada
    * Útil para extender o acortar el tiempo de reserva
    */
+  @ApiPropertyOptional({ description: 'Nueva fecha/hora de fin' })
   @IsOptional()
-  @IsDateString({}, { message: 'La fecha de fin debe ser una fecha válida en formato ISO' })
-  fecha_fin?: string;
-
+  @Type(() => Date)
+  @IsDate({ message: 'fecha_fin debe ser Date válida' })
+  fecha_fin?: Date;
   /**
    * Nuevo estado de la reserva (opcional)
    * Solo administradores pueden cambiar estados
    * ACTIVA, FINALIZADA, CANCELADA
    */
   @IsOptional()
-  @IsEnum(EstadoReserva, { 
+  @IsEnum(EstadoReservaDTO, { 
     message: 'El estado debe ser: activa, finalizada o cancelada' 
   })
-  estado?: EstadoReserva;
+  estado?: EstadoReservaDTO;
 }

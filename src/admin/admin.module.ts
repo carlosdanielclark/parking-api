@@ -16,7 +16,7 @@ import { LoggingService } from '../logging/logging.service';
 import { Log, LogSchema } from '../schemas/log.schema';
 
 
-import { LoggingModule } from '../../src/logging/logging.module';
+import { LoggingModule } from '../logging/logging.module';
 
 /**
  * Módulo administrativo para gestión de logs del sistema

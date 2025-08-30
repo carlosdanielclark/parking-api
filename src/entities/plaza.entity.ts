@@ -1,3 +1,4 @@
+// src/entities/plaza.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, OneToMany } from 'typeorm';
 import { Reserva } from './reserva.entity';
 
@@ -42,36 +43,32 @@ export class Plaza {
    * Número identificativo de la plaza visible físicamente
    * Debe ser único en todo el sistema (ej: "A001", "B015")
    */
-  @Column({ length: 10, unique: true })
-  numero_plaza: string;
+  @Column({ 
+    type: 'int', 
+    unique: true,
+    comment: 'Número único identificativo de la plaza'
+  })
+  numero_plaza: number;
 
   /**
    * Descripción de la ubicación física de la plaza
    * Información adicional para facilitar la localización
    */
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 120, nullable: true })
   ubicacion?: string;
 
   /**
    * Estado actual de la plaza
    * Determina si está disponible para reservas
    */
-  @Column({ 
-    type: 'enum',
-    enum: EstadoPlaza,
-    default: EstadoPlaza.LIBRE 
-  })
+  @Column({ type: 'enum', enum: EstadoPlaza, default: EstadoPlaza.LIBRE })
   estado: EstadoPlaza;
 
   /**
    * Tipo de plaza según características especiales
    * Permite filtrar plazas con requerimientos específicos
    */
-  @Column({ 
-    type: 'enum',
-    enum: TipoPlaza,
-    default: TipoPlaza.NORMAL 
-  })
+  @Column({ type: 'enum', enum: TipoPlaza, default: TipoPlaza.NORMAL })
   tipo: TipoPlaza;
 
   /**
