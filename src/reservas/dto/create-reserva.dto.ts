@@ -1,7 +1,7 @@
 // src/reservas/dto/create-reserva.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsUUID, Min, IsDateString, IsDate, IsNotEmpty } from 'class-validator';
+import { IsInt, IsUUID, Min, IsDate } from 'class-validator';
 
 /**
  * DTO para la creación de reservas de parking

@@ -32,7 +32,18 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "all-e2e":  "jest --config test/jest-e2e.json",
+    "acceso-logs-e2e":    "jest --config test/jest-e2e.json test/e2e/casos/acceso-logs.e2e-spec.ts",
+    "actualizacion-usuarios-e2e": "jest --config test/jest-e2e.json test/e2e/casos/actualizacion-usuarios.e2e-spec.ts",
+    "consulta-ocupacion-e2e":     "jest --config test/jest-e2e.json test/e2e/casos/consulta-ocupacion.e2e-spec.ts",
+    "reserva-plaza-e2e":          "jest --config test/jest-e2e.json test/e2e/casos/reserva-plaza.e2e-spec.ts",
+    "auth-integration-e2e":       "jest --config test/jest-e2e.json test/e2e/integration/auth-integration.e2e-spec.ts",
+    "auth-e2e":                   "jest --config test/jest-e2e.json test/e2e/auth.e2e-spec.ts",
+    "ocupacion-e2e":              "jest --config test/jest-e2e.json test/e2e/ocupacion.e2e-spec.ts",
+    "reservas-e2e":               "jest --config test/jest-e2e.json test/e2e/reservas.e2e-spec.ts",
+    "user-management-e2e":        "jest --config test/jest-e2e.json test/e2e/user-management.e2e-spec.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

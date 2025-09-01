@@ -20,12 +20,6 @@ export class ReservaTransactionService {
   constructor(
     @InjectRepository(Reserva)
     private readonly reservaRepository: Repository<Reserva>,
-    @InjectRepository(Plaza)
-    private readonly plazaRepository: Repository<Plaza>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(Vehiculo)
-    private readonly vehiculoRepository: Repository<Vehiculo>,
     private readonly dataSource: DataSource,
     private readonly loggingService: LoggingService,
   ) {}

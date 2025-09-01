@@ -4,11 +4,8 @@ import {
   Get, 
   Post, 
   Body, 
-  Patch, 
   Param, 
-  Delete, 
   UseGuards, 
-  Query,
   HttpCode, 
   HttpStatus,
   Logger, 
@@ -16,7 +13,6 @@ import {
 } from '@nestjs/common';
 import { ReservasService } from './reservas.service';
 import { CreateReservaDto } from './dto/create-reserva.dto';
-import { UpdateReservaDto } from './dto/update-reserva.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import * as getUserDecorator from '../auth/decorators/get-user.decorator';
 import { UserRole } from '../entities/user.entity';

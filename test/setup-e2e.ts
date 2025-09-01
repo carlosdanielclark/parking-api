@@ -1,105 +1,106 @@
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
-import { getConnectionToken } from '@nestjs/typeorm';
-import { getConnectionToken as getMongoConnectionToken } from '@nestjs/mongoose';
-import { Connection } from 'typeorm';
-import { Connection as MongoConnection } from 'mongoose';
+import { config as dotenv } from 'dotenv';
+import { DataSource } from 'typeorm';
+import mongoose, { Connection as MongoConnection } from 'mongoose';
 
-export class E2ETestSetup {
-  static mongoServer: MongoMemoryServer;
-  static app: INestApplication;
+// Carga variables desde .env.test solo si está en test
+dotenv({ path: process.env.NODE_ENV === 'test' ? '.env.test' : '.env' });
 
-  static async setupTestEnvironment(): Promise<INestApplication> {
-    try {
-      console.log('Starting MongoMemoryServer...');
-      this.mongoServer = await MongoMemoryServer.create();
-      console.log('MongoMemoryServer started at', this.mongoServer.getUri());
+let pgDataSource: DataSource | null = null;
+let mongoConnection: MongoConnection | null = null;
 
-      // Set environment variables carefully before app init
-      process.env.NODE_ENV = 'test';
-      process.env.MONGODB_URI = this.mongoServer.getUri();
-      process.env.POSTGRES_DATABASE = 'parking_test';
-      process.env.JWT_SECRET = 'test_jwt_secret_key_123';
-
-      console.log('Creating Nest testing module...');
-      const moduleFixture = await Test.createTestingModule({
-        imports: [AppModule],
-      }).compile();
-
-      this.app = moduleFixture.createNestApplication();
-      
-      this.app.useGlobalPipes(new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }));
-
-      console.log('Initializing Nest application...');
-      await this.app.init();
-      console.log('Nest application initialized');
-
-      return this.app;
-    } catch (error) {
-      console.error('Error during setupTestEnvironment:', error);
-      throw error;
-    }
+// PostgreSQL
+async function connectPostgres() {
+  if (pgDataSource && pgDataSource.isInitialized) return pgDataSource;
+  console.log('🗄️ [PostgreSQL] Conectando a la base de datos...');
+  pgDataSource = new DataSource({
+    type: 'postgres',
+    host: process.env.POSTGRES_HOST,
+    port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+    username: process.env.POSTGRES_USERNAME,
+    password: process.env.POSTGRES_PASSWORD,
+    database: process.env.POSTGRES_DATABASE,
+    // Puedes agregar entities o synchronize: false aquí si lo requieres
+  });
+  await pgDataSource.initialize();
+  console.log('✅ [PostgreSQL] Conectado');
+  return pgDataSource;
 }
 
-  static async teardownTestEnvironment(): Promise<void> {
-    try {
-      console.log('Closing Nest application...');
-      if (this.app) await this.app.close();
-      console.log('Nest application closed');
-
-      console.log('Stopping MongoMemoryServer...');
-      if (this.mongoServer) await this.mongoServer.stop();
-      console.log('MongoMemoryServer stopped');
-    } catch (error) {
-      console.error('Error during teardownTestEnvironment:', error);
-    }
+async function cleanPostgres() {
+  const ds = await connectPostgres();
+  const tables = ['reservas', 'vehiculos', 'usuarios', 'plazas']; // Ajusta según tu modelo
+  console.log('⚡ [PostgreSQL] Limpiando tablas...');
+  for (const table of tables) {
+    await ds.query(`TRUNCATE TABLE "${table}" RESTART IDENTITY CASCADE;`);
   }
+  console.log('🎉 [PostgreSQL] Tablas limpias');
+}
 
-  static async cleanDatabase(): Promise<void> {
-    try {
-      // Limpiar PostgreSQL
-      const pgConnection = this.app.get<Connection>(getConnectionToken());
-      if (pgConnection) {
-        const entities = pgConnection.entityMetadatas;
-        for (const entity of entities) {
-          const repository = pgConnection.getRepository(entity.name);
-          await repository.query(`TRUNCATE TABLE "${entity.tableName}" RESTART IDENTITY CASCADE;`);
-        }
-      }
-      
-      // Limpiar MongoDB
-      const mongoConnection = this.app.get<MongoConnection>(getMongoConnectionToken());
-      if (mongoConnection && mongoConnection.db) {
-        const collections = await mongoConnection.db.collections();
-        for (const collection of collections) {
-          await collection.deleteMany({});
-        }
-      }
-    } catch (error) {
-      console.warn('Error al limpiar base de datos:', error.message);
-    }
+// MongoDB
+async function connectMongo() {
+  if (mongoConnection && mongoConnection.readyState === 1) return mongoConnection;
+  console.log('🍃 [MongoDB] Conectando a la base de datos...');
+  // Revisar ruta a mongodb
+  if(process.env.MONGODB_URI == undefined){
+    console.log('❌ [INFO] Attempting connection to MongoDB:', process.env.MONGODB_URI);
+  }else{
+    console.log('✅ [INFO] Attempting connection to MongoDB:', process.env.MONGODB_URI);
+  }  
+  await mongoose.connect(process.env.MONGODB_URI || '', {
+    dbName: process.env.MONGODB_DATABASE,
+  });
+  mongoConnection = mongoose.connection;
+  mongoConnection.on('error', err => console.error('❌ [MongoDB] Error:', err));
+  console.log('✅ [MongoDB] Conectado');
+  return mongoConnection;
+}
+
+async function cleanMongo() {
+  const conn = await connectMongo();
+  if (!conn.db) {
+    console.warn('⚠️ [MongoDB] cleanMongo: conn.db no está disponible.');
+    return;
   }
-
-  
+  console.log('⚡ [MongoDB] Limpiando colecciones...');
+  const collections = await conn.db.collections();
+  for (const col of collections) {
+    await col.deleteMany({});
+  }
+  console.log('🎉 [MongoDB] Colecciones limpias');
 }
 
 
+// Jest Hooks
+export default async function globalSetup() {
+  console.log('\n🚦 [E2E] Configuración global en ejecución...');
+  await connectPostgres();
+  await connectMongo();
+  console.log('🚦 [E2E] Entorno listo, ejecutando pruebas...');
+}
 
-// Configuración global para todas las pruebas e2e
-beforeAll(async () => {
-  await E2ETestSetup.setupTestEnvironment();
-}, 300000);
+// Limpieza global al terminar
+export async function teardown() {
+  console.log('🧹 [E2E] Cerrando conexiones y limpiando entorno...');
+  if (pgDataSource && pgDataSource.isInitialized) {
+    await pgDataSource.destroy();
+    console.log('🛑 [PostgreSQL] Desconectado');
+  }
+  if (mongoConnection && mongoConnection.readyState === 1) {
+    await mongoConnection.close();
+    console.log('🛑 [MongoDB] Desconectado');
+  }
+  console.log('✅ [E2E] Limpieza global completa | Listo para salir');
+}
 
-afterAll(async () => {
-  await E2ETestSetup.teardownTestEnvironment();
-}, 30000);
+// Limpieza antes de cada suite, recomendado en setupFilesAfterEnv
+export async function setupTestSuite() {
+  console.log('\n🔄 [E2E] Limpiando datos previos al suite de test...');
+  await cleanPostgres();
+  await cleanMongo();
+  console.log('🔄 [E2E] Datos limpios | Test suite listo 🚀');
+}
 
-beforeEach(async () => {
-  await E2ETestSetup.cleanDatabase();
-});
+// (Opcional) Limpieza entre tests individuales – puedes dejarlo vacío o añadir lógica si es necesario
+export async function setupTest() {
+  // Puedes usar esto para limpieza entre tests individuales si tienes side effects extra
+}
