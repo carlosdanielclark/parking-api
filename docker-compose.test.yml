@@ -1,0 +1,46 @@
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: parking-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: parking_test_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d parking_test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb-test:
+    image: mongo:7
+    container_name: parking-mongodb-test
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: test_mongo_user
+      MONGO_INITDB_ROOT_PASSWORD: test_mongo_password
+      MONGO_INITDB_DATABASE: parking_logs_test
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_test_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_test_data:
+    driver: local
+  mongodb_test_data:
+    driver: local
+
+networks:
+  default:
+    name: parking-test-network

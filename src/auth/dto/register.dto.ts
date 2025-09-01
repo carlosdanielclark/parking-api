@@ -37,13 +37,4 @@ export class RegisterDto {
   @IsOptional()
   @IsString({ message: 'El teléfono debe ser una cadena de texto' })
   telefono?: string;
-
-  /**
-   * Rol del usuario en el sistema
-   * Por defecto se asigna CLIENTE si no se especifica
-   * Solo ADMIN puede crear usuarios con roles superiores
-   */
-  @IsOptional()
-  @IsEnum(UserRole, { message: 'El rol debe ser: admin, empleado o cliente' })
-  role?: UserRole;
 }

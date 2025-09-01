@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -29,9 +29,12 @@ export class AuthService {
    * Por defecto asigna rol CLIENTE, los admin se crean desde seeds
    */
   async register(registerDto: RegisterDto): Promise<{ user: Partial<User>, access_token: string }> {
-    const { email, password, ...userData } = registerDto;
+    const { email, password } = registerDto;
 
-    this.logger.log(`Registro de usuario: ${email}`);
+    // Fijar rol CLIENTE para registro público
+    const roleToAssign = UserRole.CLIENTE;
+
+    this.logger.log(`Registro de usuario público: ${email} con rol fijo ${roleToAssign}`);
 
     // Verificar si el email ya existe
     const existingUser = await this.userRepository.findOne({ where: { email } });
@@ -46,10 +49,10 @@ export class AuthService {
 
       // Crear usuario (por defecto CLIENTE, admin solo via registerDto.role)
       const newUser = this.userRepository.create({
-        ...userData,
+        ...registerDto,
         email,
         password: hashedPassword,
-        role: registerDto.role || UserRole.CLIENTE,
+        role: roleToAssign,
       });
 
       const savedUser = await this.userRepository.save(newUser);

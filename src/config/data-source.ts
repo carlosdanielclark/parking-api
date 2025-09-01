@@ -3,7 +3,7 @@ import { User } from '../entities/user.entity';
 import { Plaza } from '../entities/plaza.entity';
 import { Vehiculo } from '../entities/vehiculo.entity';
 import { Reserva } from '../entities/reserva.entity';
-import { FixPlazaUniqueConstraint1724857957000 } from '../migration/FixPlazaUniqueConstraint';
+import { InitParkingDbSchema1693600000000 } from '../migrations/InitParkingDbSchema';
 /**
  * Configuración de DataSource para migraciones de TypeORM
  * Utiliza variables de entorno para conexión
@@ -17,7 +17,7 @@ export const AppDataSource = new DataSource({
   database: process.env.POSTGRES_DATABASE || 'parking_db',
   
   entities: [User, Plaza, Vehiculo, Reserva],
-  migrations: [FixPlazaUniqueConstraint1724857957000],
+  migrations: [InitParkingDbSchema1693600000000],
   
   // Configuración para desarrollo
   synchronize: false, // ¡NUNCA true con migraciones!

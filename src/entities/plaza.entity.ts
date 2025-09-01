@@ -44,11 +44,12 @@ export class Plaza {
    * Debe ser único en todo el sistema (ej: "A001", "B015")
    */
   @Column({ 
-    type: 'int', 
+    type: 'varchar', 
+    length: 5, 
     unique: true,
     comment: 'Número único identificativo de la plaza'
   })
-  numero_plaza: number;
+  numero_plaza: string;
 
   /**
    * Descripción de la ubicación física de la plaza

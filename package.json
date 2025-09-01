@@ -6,14 +6,22 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/data-source.ts",
-    "migration:create": "typeorm-ts-node-commonjs migration:create",
-    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/data-source.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
-    "db:setup": "node scripts/setup-database.js",
-    "db:reset": "pnpm run migration:revert && pnpm run migration:run",
-    "migrate": "pnpm build && pnpm typeorm migration:run -d dist/config/data-source.js",
     "build": "nest build",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "typeorm:prod": "typeorm",
+    
+    "migration:run:prod": "typeorm migration:run -d dist/config/data-source.js",
+    
+    "migrate": "pnpm run build && pnpm run migration:run:prod",
+    
+    "migration:run": "pnpm run typeorm migration:run -d src/config/data-source.ts",
+    "migration:revert": "pnpm run typeorm migration:revert -d src/config/data-source.ts",
+    "migration:generate": "pnpm run typeorm migration:generate -d src/config/data-source.ts",
+
+    "migration:run:test": "pnpm run typeorm migration:run -d src/config/test-data-source.ts",
+    "migration:revert:test": "pnpm run typeorm migration:revert -d src/config/test-data-source.ts",
+    "migration:generate:test": "pnpm run typeorm migration:generate -d src/config/test-data-source.ts",
+
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

@@ -47,10 +47,20 @@ export class ReservasService {
 
     this.logger.log(`Solicitud de reserva: Plaza ${createReservaDto.plaza_id} por usuario ${currentUser.userId}`);
 
-    // 1. Validar permisos: solo admin o el propio usuario pueden crear reservas para ese usuario
-    if (currentUser.role !== UserRole.ADMIN && currentUser.userId !== usuario_id) {
-      this.logger.warn(`Acceso denegado: usuario ${currentUser.userId} intentó crear reserva para usuario ${usuario_id}`);
-      throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
+    // 1. Validar permisos: solo el propio usuario pueden crear reservas para ese usuario
+    if (currentUser.role === UserRole.ADMIN) {
+      // No permitir que admin cree reserva en nombre de otro usuario
+      if (currentUser.userId !== usuario_id) {
+        this.logger.warn(`Acceso denegado: admin ${currentUser.userId} intento crear reserva para otro usuario ${usuario_id}`);
+        throw new ForbiddenException('Los administradores no pueden crear reservas en nombre de otros usuarios');
+      }
+      // Sino admin crea solo para sí mismo, se permite
+    } else {
+      // Clientes solo pueden crear reservas para sí mismos
+      if (currentUser.userId !== usuario_id) {
+        this.logger.warn(`Acceso denegado: usuario ${currentUser.userId} intento crear reserva para usuario ${usuario_id}`);
+        throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
+      }
     }
 
     // 2. Validar formatos y lógica de fechas

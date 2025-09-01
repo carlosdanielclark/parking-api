@@ -16,9 +16,9 @@ export class CreatePlazaDto {
    * Campo requerido para identificación física de la plaza
    */
   @ApiProperty({ example: 12, description: 'Número visible de plaza' })
-  @IsInt({ message: 'numero_plaza debe ser entero' })
-  @IsPositive({ message: 'numero_plaza debe ser > 0' })
-  numero_plaza: number;
+  @IsString({ message: 'numero_plaza debe ser una cadena de texto' })
+  @MaxLength(5, {message: 'numero_plaza: máx 5 caracteres' })
+  numero_plaza: string;
   /**
    * Descripción de la ubicación física de la plaza (opcional)
    * Información adicional para facilitar la localización
