@@ -6,7 +6,7 @@ import { Repository } from 'typeorm';
 import { Plaza, EstadoPlaza, TipoPlaza } from '../entities/plaza.entity';
 import { CreatePlazaDto } from './dto/create-plaza.dto';
 import { UpdatePlazaDto } from './dto/update-plaza.dto';
-import { EstadoReservaDTO } from 'src/entities/reserva.entity';
+import { EstadoReservaDTO } from '../entities/reserva.entity';
 
 /**
  * Servicio para la gestión completa de plazas de parking

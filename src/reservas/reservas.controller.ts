@@ -19,8 +19,8 @@ import { UserRole } from '../entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuditInterceptor } from '../logging/audit.interceptor';
-import { AuditAction } from 'src/logging/audit-action.decorator';
-import { LogAction } from 'src/schemas/log.schema';
+import { AuditAction } from '../logging/audit-action.decorator';
+import { LogAction } from '../schemas/log.schema';
 
 /**
  * Controlador para la gestión de reservas de parking

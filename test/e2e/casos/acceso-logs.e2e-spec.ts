@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
-import { AuthHelper, TestUser } from '../../helpers/auth-helper';
+import { AuthHelper } from '../../helpers/auth-helper';
 import { DataFixtures } from '../../helpers/data-fixtures';
 import { UserRole } from '../../../src/entities/user.entity';
 
@@ -18,9 +18,9 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   let authHelper: AuthHelper;
   let dataFixtures: DataFixtures;
   let usuarios: {
-    admin: TestUser;
-    empleado: TestUser;
-    cliente: TestUser;
+    admin: { user: any, token: string },
+    empleado: { user: any, token: string },
+    cliente: { user: any, token: string }
   };
 
   beforeAll(async () => {
@@ -505,7 +505,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     // Crear más usuarios y actividad
     const clienteExtra = await authHelper.createAndLoginUser(UserRole.CLIENTE);
     
-    const plazas = await dataFixtures.createPlazas(usuarios.admin.token, { count: 2, prefix: 'EXTRA' });
+    const plazas = await dataFixtures.createPlazas(usuarios.admin.token, { count: 2 });
     
     const vehiculo = await dataFixtures.createVehiculo(
       clienteExtra.user.id,
@@ -515,12 +515,15 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
     // Crear y cancelar reservas para generar más logs
     for (let i = 0; i < 2; i++) {
+      const fecha_inicio = dataFixtures.generateFutureDate(i + 2);
+      const fecha_fin = dataFixtures.generateFutureDate(i + 3);
+
       const reserva = await dataFixtures.createReserva(
         clienteExtra.user.id,
         plazas[i].id,
         vehiculo.id,
         clienteExtra.token,
-        { horasEnElFuturo: i + 2, duracionHoras: 1 }
+        { fecha_inicio, fecha_fin } // ahora el nombre de las propiedades es correcto
       );
 
       await request(app.getHttpServer())

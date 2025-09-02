@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
-import { AuthHelper, TestUser } from '../../helpers/auth-helper';
+import { AuthHelper, AuthenticatedUser } from '../../helpers/auth-helper';
 import { DataFixtures } from '../../helpers/data-fixtures';
 import { UserRole } from '../../../src/entities/user.entity';
 
@@ -16,13 +16,12 @@ import { UserRole } from '../../../src/entities/user.entity';
 describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
   let app: INestApplication;
   let authHelper: AuthHelper;
-  let dataFixtures: DataFixtures;
   let usuarios: {
-    admin: TestUser;
-    empleado: TestUser;
-    cliente: TestUser;
+    admin: AuthenticatedUser;
+    empleado: AuthenticatedUser;
+    cliente: AuthenticatedUser;
   };
-  let usuarioParaActualizar: TestUser;
+  let usuarioParaActualizar: AuthenticatedUser;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -33,7 +32,6 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
     await app.init();
 
     authHelper = new AuthHelper(app);
-    dataFixtures = new DataFixtures(app);
   });
 
   beforeEach(async () => {

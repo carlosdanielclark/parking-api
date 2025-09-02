@@ -3,369 +3,307 @@ import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { UserRole } from '../../src/entities/user.entity';
 
-export interface TestUser {
+export interface AuthenticatedUser {
   user: {
     id: string;
-    nombre: string;
     email: string;
-    telefono?: string;
+    nombre: string;
     role: UserRole;
-    created_at: string;
-    updated_at: string;
   };
   token: string;
 }
 
-export interface ClienteWithVehiculo {
-  cliente: TestUser;
-  vehiculo: {
-    id: string;
-    placa: string;
-    marca?: string;
-    modelo?: string;
-    color?: string;
-    usuario_id: string;
-    created_at: string;
-  };
-}
-
-/**
- * Helper para manejo de autenticación en tests E2E
- * Facilita la creación de usuarios, login y manejo de tokens JWT
- */
 export class AuthHelper {
-  private static userCounter = 0;
-
   constructor(private app: INestApplication) {}
 
-  /**
-   * Crea y hace login de un usuario con rol específico
+    /**
+   * Crear un cliente con un vehículo asociado
+   * Útil para tests que requieren un cliente con vehículo
+   * 
+   * @returns Objeto con el cliente autenticado y el vehículo creado
    */
-  async createAndLoginUser(
-    role: UserRole, 
-    userData?: Partial<any>
-  ): Promise<TestUser> {
-    AuthHelper.userCounter++;
+  async createClienteWithVehiculo(): Promise<{
+    cliente: AuthenticatedUser;
+    vehiculo: any;
+  }> {
+    // Crear cliente
+    const cliente = await this.createAndLoginUser(UserRole.CLIENTE);
     
-    // Datos por defecto según el rol
-    const defaultUserData = this.getDefaultUserData(role, AuthHelper.userCounter);
-    
-    const userToCreate = {
-      ...defaultUserData,
-      ...userData,
+    // Crear vehículo para el cliente
+    const vehiculoData = {
+      placa: `TEST-${Date.now()}`,
+      marca: 'Test',
+      modelo: 'Model',
+      color: 'Color'
     };
 
-    try {
-      // 1. Registrar usuario (solo para clientes) o crear vía admin
-      let registerResponse;
-      
-      if (role === UserRole.CLIENTE) {
-        // Clientes se registran públicamente
-        registerResponse = await request(this.app.getHttpServer())
-          .post('/auth/register')
-          .send({
-            nombre: userToCreate.nombre,
-            email: userToCreate.email,
-            password: userToCreate.password,
-            telefono: userToCreate.telefono,
-          })
-          .expect(201);
-      } else {
-        // Empleados y admins necesitan ser creados por un admin existente
-        const tempAdmin = await this.getOrCreateSystemAdmin();
-        
-        registerResponse = await request(this.app.getHttpServer())
-          .post('/users')
-          .set('Authorization', `Bearer ${tempAdmin.token}`)
-          .send(userToCreate)
-          .expect(201);
-      }
+    const response = await request(this.app.getHttpServer())
+      .post('/vehiculos')
+      .set(this.getAuthHeader(cliente.token))
+      .send(vehiculoData)
+      .expect(201);
 
-      // 2. Hacer login para obtener el token
-      const loginResponse = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: userToCreate.email,
-          password: userToCreate.password,
-        })
+    return {
+      cliente,
+      vehiculo: response.body.data
+    };
+  }
+
+
+  /**
+   * Crear y hacer login de un usuario de prueba
+   * 
+   * @param role - Rol del usuario a crear
+   * @param customData - Datos personalizados opcionales
+   * @returns Usuario autenticado con token
+   */
+  async createAndLoginUser(
+    role: UserRole = UserRole.CLIENTE,
+    customData: Partial<{
+      nombre: string;
+      email: string;
+      telefono: string;
+    }> = {}
+  ): Promise<AuthenticatedUser> {
+    const timestamp = Date.now();
+    const baseEmail = customData.email || `test-${role.toLowerCase()}-${timestamp}@test.com`;
+    
+    const userData = {
+      nombre: customData.nombre || `Test ${role}`,
+      email: baseEmail,
+      password: this.getDefaultPassword(role),
+      telefono: customData.telefono || '+123456789',
+    };
+
+    // Registrar usuario
+    const registerResponse = await request(this.app.getHttpServer())
+      .post('/auth/register')
+      .send(userData)
+      .expect(201);
+
+    // Si no es cliente, necesitamos actualizar el rol (solo admin puede hacerlo)
+    let userResponse = registerResponse;
+    if (role !== UserRole.CLIENTE) {
+      // Usar admin predeterminado para cambiar rol
+      const adminToken = await this.getAdminToken();
+      
+      await request(this.app.getHttpServer())
+        .patch(`/users/${registerResponse.body.data.user.id}`)
+        .set(this.getAuthHeader(adminToken))
+        .send({ role })
         .expect(200);
 
-      return {
-        user: registerResponse.body.data?.user || registerResponse.body.data,
-        token: loginResponse.body.data.access_token,
-      };
-
-    } catch (error) {
-      console.error(`Error creando usuario ${role}:`, error);
-      throw error;
+      // Hacer login nuevamente para obtener token actualizado
+      userResponse = await request(this.app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: userData.email,
+          password: userData.password,
+        })
+        .expect(200);
     }
+
+    return {
+      user: userResponse.body.data.user,
+      token: userResponse.body.data.access_token,
+    };
   }
 
   /**
-   * Crea múltiples usuarios con roles predefinidos
+   * Crear múltiples usuarios de diferentes roles
+   * Útil para tests que requieren interacciones entre roles
+   * 
+   * @returns Objeto con usuarios de cada rol
    */
   async createMultipleUsers(): Promise<{
-    admin: TestUser;
-    empleado: TestUser;
-    cliente: TestUser;
+    admin: AuthenticatedUser;
+    empleado: AuthenticatedUser;
+    cliente: AuthenticatedUser;
   }> {
-    // Crear admin primero (será el admin del sistema)
-    const admin = await this.createAndLoginUser(UserRole.ADMIN);
+    const timestamp = Date.now();
     
-    // Crear empleado y cliente en paralelo
-    const [empleado, cliente] = await Promise.all([
-      this.createAndLoginUser(UserRole.EMPLEADO),
-      this.createAndLoginUser(UserRole.CLIENTE),
+    const [admin, empleado, cliente] = await Promise.all([
+      this.createAndLoginUser(UserRole.ADMIN, {
+        email: `admin-${timestamp}@test.com`,
+        nombre: 'Admin Test'
+      }),
+      this.createAndLoginUser(UserRole.EMPLEADO, {
+        email: `empleado-${timestamp}@test.com`,
+        nombre: 'Empleado Test'
+      }),
+      this.createAndLoginUser(UserRole.CLIENTE, {
+        email: `cliente-${timestamp}@test.com`,
+        nombre: 'Cliente Test'
+      }),
     ]);
 
     return { admin, empleado, cliente };
   }
 
   /**
-   * Crea un cliente con vehículo asociado
+   * Obtener token del administrador predeterminado del sistema
+   * 
+   * @returns Token JWT del admin
    */
-  async createClienteWithVehiculo(
-    clienteData?: Partial<any>, 
-    vehiculoData?: Partial<any>
-  ): Promise<ClienteWithVehiculo> {
-    // Crear cliente
-    const cliente = await this.createAndLoginUser(UserRole.CLIENTE, clienteData);
+  async getAdminToken(): Promise<string> {
+    try {
+      const response = await request(this.app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'admin@parking.com',
+          password: 'admin123',
+        })
+        .expect(200);
 
-    // Generar datos del vehículo
-    const defaultVehiculoData = {
-      placa: `VEH${AuthHelper.userCounter.toString().padStart(3, '0')}`,
-      marca: 'Toyota',
-      modelo: 'Corolla',
-      color: 'Blanco',
-      usuario_id: cliente.user.id,
-    };
-
-    const vehiculoToCreate = {
-      ...defaultVehiculoData,
-      ...vehiculoData,
-    };
-
-    // Crear vehículo
-    const vehiculoResponse = await request(this.app.getHttpServer())
-      .post('/vehiculos')
-      .set('Authorization', `Bearer ${cliente.token}`)
-      .send(vehiculoToCreate)
-      .expect(201);
-
-    return {
-      cliente,
-      vehiculo: vehiculoResponse.body.data,
-    };
+      return response.body.data.access_token;
+    } catch (error) {
+      throw new Error(`No se pudo obtener token de admin: ${error.message}`);
+    }
   }
 
   /**
-   * Obtiene el header de autorización para requests
+   * Obtener token del empleado predeterminado del sistema
+   * 
+   * @returns Token JWT del empleado
+   */
+  async getEmpleadoToken(): Promise<string> {
+    try {
+      const response = await request(this.app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'empleado@parking.com',
+          password: 'empleado123',
+        })
+        .expect(200);
+
+      return response.body.data.access_token;
+    } catch (error) {
+      throw new Error(`No se pudo obtener token de empleado: ${error.message}`);
+    }
+  }
+
+  /**
+   * Obtener token del cliente predeterminado del sistema
+   * 
+   * @returns Token JWT del cliente
+   */
+  async getClienteToken(): Promise<string> {
+    try {
+      const response = await request(this.app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'cliente@parking.com',
+          password: 'cliente123',
+        })
+        .expect(200);
+
+      return response.body.data.access_token;
+    } catch (error) {
+      throw new Error(`No se pudo obtener token de cliente: ${error.message}`);
+    }
+  }
+
+  /**
+   * Generar headers de autorización para requests
+   * 
+   * @param token - Token JWT
+   * @returns Headers de autorización
    */
   getAuthHeader(token: string): { Authorization: string } {
     return { Authorization: `Bearer ${token}` };
   }
 
-  /**
-   * Verifica si un token JWT es válido
-   */
-  async validateToken(token: string): Promise<boolean> {
-    try {
-      const response = await request(this.app.getHttpServer())
-        .get('/auth/profile')
-        .set('Authorization', `Bearer ${token}`);
-      
-      return response.status === 200;
-    } catch {
-      return false;
-    }
-  }
 
   /**
-   * Renueva un token JWT haciendo login nuevamente
+   * Hacer login con credenciales específicas
+   * 
+   * @param email - Email del usuario
+   * @param password - Contraseña del usuario
+   * @returns Token JWT
    */
-  async renewToken(email: string, password: string): Promise<string> {
-    const loginResponse = await request(this.app.getHttpServer())
+  async login(email: string, password: string): Promise<string> {
+    const response = await request(this.app.getHttpServer())
       .post('/auth/login')
       .send({ email, password })
       .expect(200);
 
-    return loginResponse.body.data.access_token;
+    return response.body.data.access_token;
   }
 
   /**
-   * Crea múltiples usuarios del mismo rol (útil para tests de concurrencia)
+   * Verificar que un token es válido
+   * 
+   * @param token - Token a verificar
+   * @returns true si el token es válido
    */
-  async createMultipleUsersOfRole(
-    role: UserRole, 
-    count: number
-  ): Promise<TestUser[]> {
-    const promises: any[] = [];
-    
-    for (let i = 0; i < count; i++) {
-      promises.push(this.createAndLoginUser(role));
-    }
-    
-    return Promise.all(promises);
-  }
-
-  /**
-   * Obtiene datos por defecto para un rol específico
-   */
-  private getDefaultUserData(role: UserRole, counter: number): any {
-    const baseData = {
-      [UserRole.ADMIN]: {
-        nombre: `Admin Test ${counter}`,
-        email: `admin.${counter}@test.com`,
-        password: 'admin123456',
-        telefono: `+123456${counter.toString().padStart(4, '0')}`,
-        role: UserRole.ADMIN,
-      },
-      [UserRole.EMPLEADO]: {
-        nombre: `Empleado Test ${counter}`,
-        email: `empleado.${counter}@test.com`,
-        password: 'empleado123456',
-        telefono: `+123457${counter.toString().padStart(4, '0')}`,
-        role: UserRole.EMPLEADO,
-      },
-      [UserRole.CLIENTE]: {
-        nombre: `Cliente Test ${counter}`,
-        email: `cliente.${counter}@test.com`,
-        password: 'cliente123456',
-        telefono: `+123458${counter.toString().padStart(4, '0')}`,
-        role: UserRole.CLIENTE,
-      },
-    };
-
-    return baseData[role];
-  }
-
-  /**
-   * Sistema interno para obtener o crear admin del sistema
-   */
-  private async getOrCreateSystemAdmin(): Promise<TestUser> {
-    // Intentar hacer login con admin predefinido del seed
-    try {
-      const loginResponse = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: 'admin@parking.com',
-          password: 'admin123',
-        });
-
-      if (loginResponse.status === 200) {
-        return {
-          user: loginResponse.body.data.user,
-          token: loginResponse.body.data.access_token,
-        };
-      }
-    } catch {
-      // Admin del seed no disponible, crear uno temporal
-    }
-
-    // Si no existe admin del seed, crear uno cliente y elevarlo a admin
-    // (Esto es un workaround para casos donde el seed no esté disponible)
-    const tempClient = await this.createAndLoginUser(UserRole.CLIENTE);
-    
-    // Para el test, asumir que este cliente puede actuar como admin
-    return tempClient;
-  }
-
-  /**
-   * Limpia tokens y datos de sesión (útil para tests de limpieza)
-   */
-  async logout(token: string): Promise<void> {
+  async verifyToken(token: string): Promise<boolean> {
     try {
       await request(this.app.getHttpServer())
-        .post('/auth/logout')
-        .set('Authorization', `Bearer ${token}`);
-    } catch {
-      // El logout puede no estar implementado, no es crítico
-    }
-  }
+        .get('/auth/profile')
+        .set(this.getAuthHeader(token))
+        .expect(200);
 
-  /**
-   * Verifica permisos de un usuario para un endpoint específico
-   */
-  async checkPermissions(
-    token: string, 
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
-    endpoint: string,
-    expectedStatus: number = 200
-  ): Promise<boolean> {
-    try {
-      const response = await request(this.app.getHttpServer())
-        [method.toLowerCase()](endpoint)
-        .set('Authorization', `Bearer ${token}`);
-      
-      return response.status === expectedStatus;
+      return true;
     } catch {
       return false;
     }
   }
 
   /**
-   * Genera datos de usuario únicos para evitar conflictos
+   * Obtener información del usuario autenticado
+   * 
+   * @param token - Token JWT
+   * @returns Información del usuario
    */
-  generateUniqueUserData(role: UserRole): any {
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000);
-    
-    return {
-      nombre: `${role} ${timestamp}-${random}`,
-      email: `${role.toLowerCase()}.${timestamp}.${random}@test.com`,
-      password: `${role.toLowerCase()}123456`,
-      telefono: `+${timestamp.toString().slice(-10)}`,
-      role,
+  async getUserInfo(token: string): Promise<any> {
+    const response = await request(this.app.getHttpServer())
+      .get('/auth/profile')
+      .set(this.getAuthHeader(token))
+      .expect(200);
+
+    return response.body.data.user;
+  }
+
+  /**
+   * Limpiar usuarios de prueba (opcional)
+   * Elimina usuarios creados durante los tests
+   * 
+   * @param adminToken - Token de administrador
+   * @param userIds - IDs de usuarios a eliminar
+   */
+  async cleanupUsers(adminToken: string, userIds: string[]): Promise<void> {
+    for (const userId of userIds) {
+      try {
+        await request(this.app.getHttpServer())
+          .delete(`/users/${userId}`)
+          .set(this.getAuthHeader(adminToken));
+      } catch {
+        // Ignorar errores de limpieza
+      }
+    }
+  }
+
+  // MÉTODOS PRIVADOS
+
+  /**
+   * Obtener contraseña por defecto según el rol
+   */
+  private getDefaultPassword(role: UserRole): string {
+    const passwords = {
+      [UserRole.ADMIN]: 'admin123456',
+      [UserRole.EMPLEADO]: 'empleado123456',
+      [UserRole.CLIENTE]: 'cliente123456',
     };
+
+    return passwords[role] || 'default123456';
   }
 
   /**
-   * Crea usuario con datos aleatorios únicos
+   * Generar email único para tests
    */
-  async createRandomUser(role: UserRole): Promise<TestUser> {
-    const userData = this.generateUniqueUserData(role);
-    return this.createAndLoginUser(role, userData);
-  }
-
-  /**
-   * Método para tests de concurrencia - crea usuarios en lotes
-   */
-  async createUserBatch(
-    roles: UserRole[], 
-    batchSize: number = 5
-  ): Promise<TestUser[]> {
-    const batches: any[] = [];
-    
-    // Dividir en lotes para evitar sobrecarga
-    for (let i = 0; i < roles.length; i += batchSize) {
-      const batch = roles.slice(i, i + batchSize);
-      const batchPromises = batch.map(role => this.createRandomUser(role));
-      batches.push(Promise.all(batchPromises));
-    }
-
-    const results = await Promise.all(batches);
-    return results.flat();
-  }
-
-  /**
-   * Método auxiliar para depuración de tokens
-   */
-  async debugToken(token: string): Promise<any> {
-    try {
-      const response = await request(this.app.getHttpServer())
-        .get('/auth/whoami')
-        .set('Authorization', `Bearer ${token}`);
-      
-      return response.body;
-    } catch (error) {
-      return { error: error.message, valid: false };
-    }
-  }
-
-  /**
-   * Método para cleanup después de tests
-   */
-  static resetCounter(): void {
-    AuthHelper.userCounter = 0;
+  private generateUniqueEmail(role: UserRole): string {
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(7);
+    return `test-${role.toLowerCase()}-${timestamp}-${randomSuffix}@test.com`;
   }
 }

@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
-import { AuthHelper, TestUser } from '../../helpers/auth-helper';
+import { AuthHelper, AuthenticatedUser } from '../../helpers/auth-helper';
 import { DataFixtures } from '../../helpers/data-fixtures';
 import { UserRole } from '../../../src/entities/user.entity';
 import { EstadoPlaza, TipoPlaza } from '../../../src/entities/plaza.entity';
@@ -20,9 +20,9 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
   let authHelper: AuthHelper;
   let dataFixtures: DataFixtures;
   let usuarios: {
-    admin: TestUser;
-    empleado: TestUser;
-    cliente: TestUser;
+    admin: AuthenticatedUser;
+    empleado: AuthenticatedUser;
+    cliente: AuthenticatedUser;
   };
   let plazas: any[];
   let vehiculo: any;

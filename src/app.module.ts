@@ -94,18 +94,41 @@ import { AdminModule } from './admin/admin.module';
      * Configuración asíncrona de Mongoose para MongoDB
      * Gestiona el sistema de logging y auditoría de la aplicación
      */
+    // Configuración de Mongoose MODIFICADA
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
+        // Priorizar MONGO_URI si está disponible (para pruebas)
+        if (process.env.MONGO_URI) {
+          console.log('✅ Usando MONGO_URI para conexión MongoDB:', process.env.MONGO_URI);
+          return {
+            uri: process.env.MONGO_URI,
+            retryAttempts: 3,
+            retryDelay: 1000,
+            connectionFactory: (connection) => {
+              connection.on('connected', () => {
+                console.log('✅ MongoDB conectado exitosamente via MONGO_URI');
+              });
+              connection.on('error', (error) => {
+                console.error('❌ Error de conexión MongoDB:', error);
+              });
+              return connection;
+            },
+          };
+        }
+
+        // Fallback a la configuración normal si no hay MONGO_URI
         const host = configService.get<string>('database.mongo.host')!;
         const port = configService.get<number>('database.mongo.port')!;
         const database = configService.get<string>('database.mongo.database')!;
+        
         if (!host || !port || !database) {
           throw new Error('MongoDB connection parameters are not properly configured');
         }
         
-        // Construir URI sin usuario y password
         const uri = `mongodb://${host}:${port}/${database}`;
+        console.log('✅ Usando configuración normal para MongoDB:', uri);
+        
         return {
           uri,
           retryAttempts: 3,
@@ -123,6 +146,7 @@ import { AdminModule } from './admin/admin.module';
       },
       inject: [ConfigService],
     }),
+
 
     /**
      * Registro de esquemas MongoDB

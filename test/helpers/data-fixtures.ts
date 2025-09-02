@@ -1,7 +1,6 @@
-// test/helpers/data-fixtures.ts
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
-import { TipoPlaza, EstadoPlaza } from '../../src/entities/plaza.entity';
+import { EstadoPlaza, TipoPlaza } from '../../src/entities/plaza.entity';
 import { EstadoReservaDTO } from '../../src/entities/reserva.entity';
 
 export interface PlazaOptions {
@@ -22,6 +21,9 @@ export interface ReservaOptions {
   horasEnElFuturo?: number;
   duracionHoras?: number;
   estado?: EstadoReservaDTO;
+  fecha_inicio?: string;  // Agregar esta propiedad
+  fecha_fin?: string;     // Agregar esta propiedad
+
 }
 
 /**
@@ -124,6 +126,26 @@ export class DataFixtures {
   }
 
   /**
+   * Crea múltiples vehículos para un usuario
+   */
+  async createMultipleVehiculos(
+    clienteId: string,
+    clienteToken: string,
+    count: number = 3
+  ): Promise<any[]> {
+    const vehiculos: any[] = [];
+    
+    for (let i = 0; i < count; i++) {
+      const vehiculo = await this.createVehiculo(clienteId, clienteToken, {
+        placa: `MLT${(i + 1).toString().padStart(3, '0')}`,
+      });
+      vehiculos.push(vehiculo);
+    }
+
+    return vehiculos;
+  }
+
+  /**
    * Crea una reserva de plaza
    */
   async createReserva(
@@ -136,12 +158,25 @@ export class DataFixtures {
     const {
       horasEnElFuturo = 1,
       duracionHoras = 2,
-      estado = EstadoReservaDTO.ACTIVA
+      estado = EstadoReservaDTO.ACTIVA,
+      fecha_inicio,  // Nueva propiedad opcional
+      fecha_fin      // Nueva propiedad opcional
     } = options;
 
-    const ahora = new Date();
-    const inicio = new Date(ahora.getTime() + (horasEnElFuturo * 60 * 60 * 1000));
-    const fin = new Date(inicio.getTime() + (duracionHoras * 60 * 60 * 1000));
+    // Determinar las fechas según lo proporcionado o calcularlas
+    let inicio: Date;
+    let fin: Date;
+
+    if (fecha_inicio && fecha_fin) {
+      // Usar las fechas proporcionadas
+      inicio = new Date(fecha_inicio);
+      fin = new Date(fecha_fin);
+    } else {
+      // Calcular las fechas basándose en horasEnElFuturo y duracionHoras
+      const ahora = new Date();
+      inicio = new Date(ahora.getTime() + (horasEnElFuturo * 60 * 60 * 1000));
+      fin = new Date(inicio.getTime() + (duracionHoras * 60 * 60 * 1000));
+    }
 
     const reservaData = {
       usuario_id: userId,
@@ -149,6 +184,7 @@ export class DataFixtures {
       vehiculo_id: vehiculoId,
       fecha_inicio: inicio.toISOString(),
       fecha_fin: fin.toISOString(),
+      estado: estado
     };
 
     try {
@@ -294,46 +330,37 @@ export class DataFixtures {
         })
         .expect(201);
 
-      const loginResponse = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: `cliente.test${i + 1}@example.com`,
-          password: 'cliente123456',
-        })
-        .expect(200);
-
-      const vehiculo = await this.createVehiculo(
-        clienteResponse.body.data.user.id,
-        loginResponse.body.data.access_token,
-        { placa: `CLI${(i + 1).toString().padStart(3, '0')}` }
-      );
+      const cliente = clienteResponse.body.data;
+      const vehiculo = await this.createVehiculo(cliente.user.id, cliente.access_token);
 
       clientes.push({
-        userId: clienteResponse.body.data.user.id,
+        userId: cliente.user.id,
         vehiculoId: vehiculo.id,
-        token: loginResponse.body.data.access_token,
-        user: clienteResponse.body.data.user,
+        token: cliente.access_token,
+        user: cliente.user,
         vehiculo,
       });
     }
 
     // Crear reservas activas
-    const reservasActivas = await this.simulateOccupancy(
-      clientes,
-      plazas.slice(0, 6),
-      0.8
-    );
+    const reservasActivas: any[] = [];
+    for (let i = 0; i < 3; i++) {
+      const reserva = await this.createReserva(
+        clientes[i].userId,
+        plazas[i].id,
+        clientes[i].vehiculoId,
+        clientes[i].token
+      );
+      reservasActivas.push(reserva);
+    }
 
     // Crear reservas pasadas
     const reservasPasadas = await this.createPastReservas(
       clientes[0].userId,
       clientes[0].vehiculoId,
       clientes[0].token,
-      plazas.slice(6),
-      3
+      plazas.slice(5, 8)
     );
-
-    console.log(`🏗️ Escenario completo creado: ${plazas.length} plazas, ${clientes.length} clientes, ${reservasActivas.length} reservas activas, ${reservasPasadas.length} reservas pasadas`);
 
     return {
       plazas,
@@ -344,188 +371,36 @@ export class DataFixtures {
   }
 
   /**
-   * Actualiza el estado de una plaza
-   */
-  async updatePlazaEstado(
-    adminToken: string,
-    plazaId: number,
-    nuevoEstado: EstadoPlaza
-  ): Promise<any> {
-    const response = await request(this.app.getHttpServer())
-      .patch(`/plazas/${plazaId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ estado: nuevoEstado })
-      .expect(200);
-
-    return response.body.data;
-  }
-
-  /**
-   * Cancela una reserva
-   */
-  async cancelReserva(
-    reservaId: string,
-    token: string
-  ): Promise<any> {
-    const response = await request(this.app.getHttpServer())
-      .post(`/reservas/${reservaId}/cancelar`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-
-    return response.body.data;
-  }
-
-  /**
-   * Finaliza una reserva (solo admin)
-   */
-  async finishReserva(
-    reservaId: string,
-    adminToken: string
-  ): Promise<any> {
-    const response = await request(this.app.getHttpServer())
-      .post(`/reservas/${reservaId}/finalizar`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-
-    return response.body.data;
-  }
-
-  /**
-   * Genera fechas futuras para reservas
+   * Genera una fecha futura
    */
   generateFutureDate(hoursFromNow: number): string {
-    const fecha = new Date();
-    fecha.setHours(fecha.getHours() + hoursFromNow);
-    return fecha.toISOString();
+    const date = new Date();
+    date.setHours(date.getHours() + hoursFromNow);
+    return date.toISOString();
   }
 
   /**
-   * Genera fechas pasadas para histórico
+   * Genera una fecha pasada
    */
   generatePastDate(hoursAgo: number): string {
-    const fecha = new Date();
-    fecha.setHours(fecha.getHours() - hoursAgo);
-    return fecha.toISOString();
+    const date = new Date();
+    date.setHours(date.getHours() - hoursAgo);
+    return date.toISOString();
   }
 
-  /**
-   * Crea múltiples vehículos para un usuario
-   */
-  async createMultipleVehiculos(
-    clienteId: string,
-    clienteToken: string,
-    options: VehiculoOptions[] | number = 1
-  ): Promise<any[]> {
-    const vehiculos: any[] = [];
-    let count = 1;
-    let vehiculoOptions: VehiculoOptions[] = [];
-
-    if (Array.isArray(options)) {
-      count = options.length;
-      vehiculoOptions = options;
-    } else {
-      count = options;
-      vehiculoOptions = Array(count).fill({});
-    }
-
-    for (let i = 0; i < count; i++) {
-      const vehiculo = await this.createVehiculo(
-        clienteId,
-        clienteToken,
-        vehiculoOptions[i]
-      );
-      vehiculos.push(vehiculo);
-      
-      // Pequeña pausa para evitar posibles conflictos de concurrencia
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    console.log(`🚗 Creados ${vehiculos.length} vehículos para el usuario ${clienteId}`);
-    return vehiculos;
-  }
-
-  /**
-   * Crea datos de prueba para tests de concurrencia
-   */
-  async createConcurrencyTestData(
-    adminToken: string,
-    numberOfClients: number = 5,
-    numberOfPlazas: number = 3
-  ): Promise<{
-    plazas: any[];
-    clientes: Array<{ userId: string; vehiculoId: string; token: string }>;
-  }> {
-    // Crear plazas limitadas para forzar concurrencia
-    const plazas = await this.createPlazas(adminToken, { count: numberOfPlazas });
-
-    // Crear múltiples clientes que competirán por las plazas
-    const clientes: any[] = [];
-    for (let i = 0; i < numberOfClients; i++) {
-      const clienteResponse = await request(this.app.getHttpServer())
-        .post('/auth/register')
-        .send({
-          nombre: `Cliente Concurrencia ${i + 1}`,
-          email: `concurrencia${i + 1}@test.com`,
-          password: 'cliente123456',
-        })
-        .expect(201);
-
-      const loginResponse = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: `concurrencia${i + 1}@test.com`,
-          password: 'cliente123456',
-        })
-        .expect(200);
-
-      const vehiculo = await this.createVehiculo(
-        clienteResponse.body.data.user.id,
-        loginResponse.body.data.access_token,
-        { placa: `CON${(i + 1).toString().padStart(3, '0')}` }
-      );
-
-      clientes.push({
-        userId: clienteResponse.body.data.user.id,
-        vehiculoId: vehiculo.id,
-        token: loginResponse.body.data.access_token,
-      });
-    }
-
-    return { plazas, clientes };
-  }
-
-  // Métodos auxiliares para generar datos aleatorios
+  // Helpers para datos aleatorios
   private getRandomMarca(): string {
-    const marcas = ['Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'BMW', 'Audi', 'Mercedes', 'Volkswagen', 'Hyundai'];
+    const marcas = ['Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'BMW', 'Mercedes', 'Audi'];
     return marcas[Math.floor(Math.random() * marcas.length)];
   }
 
   private getRandomModelo(): string {
-    const modelos = ['Corolla', 'Civic', 'Focus', 'Cruze', 'Sentra', 'Serie 3', 'A4', 'Clase C', 'Jetta', 'Elantra'];
+    const modelos = ['Sedan', 'Corolla', 'Civic', 'Focus', 'Aveo', 'X3', 'C-Class', 'A4'];
     return modelos[Math.floor(Math.random() * modelos.length)];
   }
 
   private getRandomColor(): string {
-    const colores = ['Blanco', 'Negro', 'Gris', 'Azul', 'Rojo', 'Plata', 'Verde', 'Amarillo'];
+    const colores = ['Blanco', 'Negro', 'Gris', 'Rojo', 'Azul', 'Plata', 'Verde'];
     return colores[Math.floor(Math.random() * colores.length)];
-  }
-
-  /**
-   * Limpia datos de prueba (útil para cleanup entre tests)
-   */
-  async cleanup(): Promise<void> {
-    // Reset counters
-    DataFixtures.plazaCounter = 0;
-    DataFixtures.vehiculoCounter = 0;
-  }
-
-  /**
-   * Obtiene estadísticas de los datos creados
-   */
-  static getStats(): { plazas: number; vehiculos: number } {
-    return {
-      plazas: DataFixtures.plazaCounter,
-      vehiculos: DataFixtures.vehiculoCounter,
-    };
   }
 }

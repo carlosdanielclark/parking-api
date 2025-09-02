@@ -1,40 +1,25 @@
 {
-  "displayName": "E2E Tests",
+  "preset": "@shelf/jest-mongodb",
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
+  "rootDir": "..",
   "testEnvironment": "node",
-  "testRegex": ".*\\.e2e-spec\\.ts$",
+  "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "collectCoverageFrom": [
-    "src/**/*.(t|j)s",
-    "!src/**/*.spec.ts",
-    "!src/**/*.e2e-spec.ts",
-    "!src/migrations/**",
-    "!src/main.ts"
-  ],
-  "coverageDirectory": "../coverage-e2e",
-  "coverageReporters": ["text", "lcov", "html"],
-  "testTimeout": 60000,
+  "setupFilesAfterEnv": ["<rootDir>/test/setup-e2e.ts"],
+  "globalSetup": "<rootDir>/test/global-setup-e2e.ts",
+  "globalTeardown": "<rootDir>/test/global-teardown-e2e.ts",
   "maxWorkers": 1,
   "forceExit": true,
   "detectOpenHandles": true,
-  "setupFilesAfterEnv": ["<rootDir>/setup-e2e.ts"],
-  "globalSetup": "<rootDir>/setup-e2e.ts",
-  "globalTeardown": "<rootDir>/setup-e2e.ts",
-  "moduleNameMapper": {
-    "^src/(.*)$": "<rootDir>/../src/$1"
-  },
-  "testPathIgnorePatterns": [
-    "/node_modules/",
-    "/dist/"
-  ],
-  "verbose": true,
-  "silent": false,
-  "bail": false,
-  "errorOnDeprecated": true,
-  "clearMocks": true,
-  "resetMocks": true,
-  "restoreMocks": true
+  "testTimeout": 120000,
+
+  "testEnvironmentOptions": {
+    "mongodbMemoryServer": {
+      "instance": {
+        "autoStart": false
+      }
+    }
+  }
 }
