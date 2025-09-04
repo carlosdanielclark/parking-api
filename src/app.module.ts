@@ -7,6 +7,8 @@ import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { DatabaseModule } from './database/database.module';
+
 
 // Importacion de helper
 import { getEnvString } from './helpers/validate_helper';
@@ -49,6 +51,7 @@ import { AdminModule } from './admin/admin.module';
  */
 @Module({
   imports: [
+    DatabaseModule,
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],

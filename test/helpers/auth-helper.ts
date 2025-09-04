@@ -145,7 +145,15 @@ export class AuthHelper {
    * 
    * @returns Token JWT del admin
    */
-  async getAdminToken(): Promise<string> {
+  // Mejorar getAdminToken con máximo de reintentos
+/**
+ * Obtener token del administrador predeterminado del sistema
+ * Mejorado con reintentos y mejor manejo de errores
+ */
+async getAdminToken(maxRetries = 3): Promise<string> {
+  let attempts = 0;
+  
+  while (attempts < maxRetries) {
     try {
       const response = await request(this.app.getHttpServer())
         .post('/auth/login')
@@ -153,13 +161,43 @@ export class AuthHelper {
           email: 'admin@parking.com',
           password: 'admin123',
         })
+        .timeout(10000) // Timeout de 10 segundos
         .expect(200);
 
       return response.body.data.access_token;
     } catch (error) {
-      throw new Error(`No se pudo obtener token de admin: ${error.message}`);
+      attempts++;
+      console.warn(`⚠️ Intento ${attempts} fallido para obtener token admin:`, error.message);
+      
+      if (attempts >= maxRetries) {
+        throw new Error(`Failed to get admin token after ${maxRetries} attempts: ${error.message}`);
+      }
+      
+      // Esperar antes del siguiente intento
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
     }
   }
+  
+  throw new Error('Unexpected flow in getAdminToken');
+}
+
+/**
+ * Validar que un token funciona correctamente
+ */
+async validateToken(token: string): Promise<boolean> {
+  try {
+    const response = await request(this.app.getHttpServer())
+      .get('/auth/profile')
+      .set(this.getAuthHeader(token))
+      .timeout(5000)
+      .expect(200);
+    
+    return response.body.success === true;
+  } catch {
+    return false;
+  }
+}
+
 
   /**
    * Obtener token del empleado predeterminado del sistema
@@ -290,12 +328,12 @@ export class AuthHelper {
    */
   private getDefaultPassword(role: UserRole): string {
     const passwords = {
-      [UserRole.ADMIN]: 'admin123456',
-      [UserRole.EMPLEADO]: 'empleado123456',
-      [UserRole.CLIENTE]: 'cliente123456',
+      [UserRole.ADMIN]: 'admin123',
+      [UserRole.EMPLEADO]: 'empleado123',
+      [UserRole.CLIENTE]: 'cliente123',
     };
 
-    return passwords[role] || 'default123456';
+    return passwords[role] || 'default123';
   }
 
   /**
