@@ -2,6 +2,7 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { UserRole } from '../../src/entities/user.entity';
+import { logStepV3 } from './log-util';
 
 export interface AuthenticatedUser {
   user: {
@@ -48,7 +49,6 @@ export class AuthHelper {
       vehiculo: response.body.data
     };
   }
-
 
   /**
    * Crear y hacer login de un usuario de prueba
@@ -145,58 +145,84 @@ export class AuthHelper {
    * 
    * @returns Token JWT del admin
    */
-  // Mejorar getAdminToken con máximo de reintentos
-/**
- * Obtener token del administrador predeterminado del sistema
- * Mejorado con reintentos y mejor manejo de errores
- */
-async getAdminToken(maxRetries = 3): Promise<string> {
-  let attempts = 0;
-  
-  while (attempts < maxRetries) {
+
+  /**
+   * Obtener token del administrador predeterminado del sistema
+   * Mejorado con reintentos y mejor manejo de errores
+   */
+  async getAdminToken(maxRetries = 5): Promise<string> {
+    let attempts = 0;
+    
+    while (attempts < maxRetries) {
+      try {
+        const response = await request(this.app.getHttpServer())
+          .post('/auth/login')
+          .send({
+            email: 'admin@parking.com',
+            password: 'admin123',
+          })
+          .timeout(15000) // Aumentar timeout a 15 segundos
+          .expect(200);
+
+          // DEBUG: Log completa de la respuesta
+          /*logStepV3('🔍 [DEBUG] Respuesta completa del login admin:', {
+            etiqueta: "GetAdminToken",
+            tipo: "info"
+          }, JSON.stringify(response.body, null, 2));*/
+
+
+          // Extracción flexible del token
+        const token = response.body.data?.access_token 
+          || response.body.access_token 
+          || response.body.data?.token;
+        
+        if (token) {
+          logStepV3(`Token de admin: ${token}`, {etiqueta:"GetAdminToken"});
+          return token;
+        }
+        
+        throw new Error('Token no encontrado en la respuesta del servidor');
+
+      } catch (error) {
+        attempts++;
+        /*logStepV3(`Intento ${attempts}/${maxRetries} fallido para obtener token admin:`, { 
+                tipo: "warning", 
+                etiqueta: 'GetAdminToken'
+              }, error.message);*/
+        if (attempts >= maxRetries) {
+          throw new Error(`Failed to get admin token after ${maxRetries} attempts: ${error.message}`);
+        }
+        
+        // Esperar con backoff exponencial
+        const delayMs = 1000 * Math.pow(2, attempts);
+        /*logStepV3(`⏳ Esperando ${delayMs}ms antes de reintentar...`, {
+          tipo: "warning",
+          etiqueta: "GetAdminToken"
+        });*/
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    
+    throw new Error('Unexpected flow in getAdminToken');
+  }
+
+
+  /**
+   * Validar que un token funciona correctamente
+   */
+  async validateToken(token: string): Promise<boolean> {
     try {
       const response = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: 'admin@parking.com',
-          password: 'admin123',
-        })
-        .timeout(10000) // Timeout de 10 segundos
+        .get('/auth/profile')
+        .set(this.getAuthHeader(token))
+        .timeout(5000)
         .expect(200);
-
-      return response.body.data.access_token;
-    } catch (error) {
-      attempts++;
-      console.warn(`⚠️ Intento ${attempts} fallido para obtener token admin:`, error.message);
       
-      if (attempts >= maxRetries) {
-        throw new Error(`Failed to get admin token after ${maxRetries} attempts: ${error.message}`);
-      }
-      
-      // Esperar antes del siguiente intento
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+      return response.body.success === true;
+    } catch {
+      return false;
     }
   }
-  
-  throw new Error('Unexpected flow in getAdminToken');
-}
-
-/**
- * Validar que un token funciona correctamente
- */
-async validateToken(token: string): Promise<boolean> {
-  try {
-    const response = await request(this.app.getHttpServer())
-      .get('/auth/profile')
-      .set(this.getAuthHeader(token))
-      .timeout(5000)
-      .expect(200);
-    
-    return response.body.success === true;
-  } catch {
-    return false;
-  }
-}
 
 
   /**

@@ -1,5 +1,5 @@
 // src/reservas/services/reserva-transaction.service.ts
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { Reserva, EstadoReservaDTO } from '../../entities/reserva.entity';
@@ -36,94 +36,110 @@ export class ReservaTransactionService {
    */
   async createReservaWithTransaction(
     createReservaDto: CreateReservaDto,
-    _currentUser: any
+    currentUser: any
   ): Promise<Reserva> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      this.logger.log(`Iniciando transacción de reserva para plaza ${createReservaDto.plaza_id}`);
+      const { usuario_id, plaza_id, vehiculo_id, fecha_inicio, fecha_fin } = createReservaDto;
 
-      // 1. Validar entidades con bloqueo pesimista para evitar condiciones de carrera
-      const [usuario, plaza, vehiculo] = await Promise.all([
-        this.validarUsuario(queryRunner, createReservaDto.usuario_id),
-        this.validarYBloquearPlaza(queryRunner, createReservaDto.plaza_id),
-        this.validarVehiculo(queryRunner, createReservaDto.vehiculo_id, createReservaDto.usuario_id),
-      ]);
+      // Validación coherente con ReservasService
+      if (currentUser.userId !== usuario_id) {
+        throw new BadRequestException('No puede crear reservas para otros usuarios');
+      }
 
-      // 2. Validar conflictos de reservas existentes
-      await this.validarConflictosReservas(
-        queryRunner, 
-        createReservaDto.plaza_id, 
-        createReservaDto.fecha_inicio, 
-        createReservaDto.fecha_fin
-      );
+      // 1. Validar vehículo
+      const vehiculo = await queryRunner.manager.findOne(Vehiculo, {
+        where: { id: vehiculo_id, usuario_id },
+        relations: ['usuario']
+      });
+      if (!vehiculo) {
+        throw new BadRequestException('El vehículo especificado no existe o no pertenece al usuario');
+      }
 
-      // 3. Crear la reserva
+      // 2. Validar plaza existe y está ACTIVA con lock
+      const plaza = await queryRunner.manager.findOne(Plaza, {
+        where: { id: plaza_id, estado: EstadoPlaza.ACTIVA },
+        lock: { mode: 'pessimistic_write' }
+      });
+      if (!plaza) {
+        throw new NotFoundException('Plaza no encontrada o no disponible');
+      }
+
+      // 3. Verificar solapamiento de reservas existentes
+      const solapamiento = await queryRunner.manager
+        .createQueryBuilder(Reserva, 'reserva')
+        .setLock('pessimistic_write')
+        .where('reserva.plaza_id = :plazaId', { plazaId: plaza_id })
+        .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
+        .andWhere('(reserva.fecha_inicio < :fin AND reserva.fecha_fin > :inicio)', {
+          inicio: new Date(fecha_inicio),
+          fin: new Date(fecha_fin),
+        })
+        .getOne();
+
+      if (solapamiento) {
+        throw new BadRequestException('La plaza no está disponible en el período solicitado');
+      }
+
+      // 4. Validar que el vehículo no tenga reservas activas en el mismo período
+      const reservaVehiculoConflictiva = await queryRunner.manager
+        .createQueryBuilder(Reserva, 'reserva')
+        .where('reserva.vehiculo_id = :vehiculoId', { vehiculoId: vehiculo_id })
+        .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
+        .andWhere('(reserva.fecha_inicio < :fin AND reserva.fecha_fin > :inicio)', {
+          inicio: new Date(fecha_inicio),
+          fin: new Date(fecha_fin),
+        })
+        .getOne();
+
+      if (reservaVehiculoConflictiva) {
+        throw new BadRequestException('El vehículo ya tiene una reserva activa en el período solicitado');
+      }
+
+      // 5. Crear reserva
       const nuevaReserva = queryRunner.manager.create(Reserva, {
-        usuario_id: usuario.id,
-        plaza_id: plaza.id,
-        vehiculo_id: vehiculo.id,
-        fecha_inicio: createReservaDto.fecha_inicio,
-        fecha_fin: createReservaDto.fecha_fin,
+        usuario_id,
+        plaza_id,
+        vehiculo_id,
+        fecha_inicio: new Date(fecha_inicio),
+        fecha_fin: new Date(fecha_fin),
         estado: EstadoReservaDTO.ACTIVA,
       });
 
-      const reservaGuardada = await queryRunner.manager.save(Reserva, nuevaReserva);
+      const reservaGuardada = await queryRunner.manager.save(nuevaReserva);
 
-      // 4. Actualizar estado de la plaza
-      await queryRunner.manager.update(Plaza, plaza.id, {
-        estado: EstadoPlaza.OCUPADA
-      });
+      // 6. Actualizar estado de plaza
+      await queryRunner.manager.update(Plaza, plaza_id, { estado: EstadoPlaza.OCUPADA });
 
-      // 5. Confirmar transacción
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Reserva creada exitosamente: ${reservaGuardada.id} - Plaza ${plaza.numero_plaza}`);
-
-      // 6. Cargar relaciones completas para la respuesta
-      const reservaCompleta = await this.reservaRepository.findOne({
+      // 7. Retornar reserva con relaciones completas
+      const reservaCompleta = await this.dataSource.getRepository(Reserva).findOne({
         where: { id: reservaGuardada.id },
-        relations: ['usuario', 'plaza', 'vehiculo']
+        relations: ['usuario', 'plaza', 'vehiculo'],
       });
-
-      // 7. Registro de auditoría (fuera de la transacción)
-      try {
-        await this.loggingService.logReservationCreated(
-          usuario.id,
-          reservaGuardada.id,
-          plaza.id,
-          vehiculo.id,
-          {
-            fecha_inicio: createReservaDto.fecha_inicio,
-            fecha_fin: createReservaDto.fecha_fin,
-            duracion_minutos: (new Date(createReservaDto.fecha_fin).getTime() - new Date(createReservaDto.fecha_inicio).getTime()) / (1000 * 60)
-          }
-        );
-      } catch (logError) {
-        this.logger.warn(`Error al registrar log de reserva: ${logError.message}`);
+      if (!reservaCompleta) {
+        throw new InternalServerErrorException('Error al recuperar la reserva creada');
       }
-
-      return reservaCompleta!;
-
+      return reservaCompleta;
     } catch (error) {
-      // Rollback automático en caso de error
       await queryRunner.rollbackTransaction();
-      
       this.logger.error(`Error en transacción de reserva: ${error.message}`, error.stack);
-      
-      // Re-lanzar error con mensaje apropiado
+
       if (error instanceof BadRequestException || error instanceof NotFoundException) {
         throw error;
       }
-      
-      throw new BadRequestException('Error interno al procesar la reserva');
+      throw new InternalServerErrorException('Error interno al crear la reserva');
     } finally {
-      // Liberar conexión
       await queryRunner.release();
     }
   }
+
+
+
 
   /**
    * Finalizar reserva con transacción

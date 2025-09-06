@@ -11,7 +11,7 @@ import { Reserva } from './reserva.entity';
 export enum EstadoPlaza {
   LIBRE = 'libre',
   OCUPADA = 'ocupada',
-  MANTENIMIENTO = 'mantenimiento'
+  MANTENIMIENTO = 'mantenimiento',
 }
 
 /**

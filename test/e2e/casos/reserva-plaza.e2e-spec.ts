@@ -10,7 +10,7 @@ import { EstadoReservaDTO } from '../../../src/entities/reserva.entity';
 import { logStepV3 } from '../../helpers/log-util';
 import { UserRole } from '../../../src/entities/user.entity';
 
-jest.setTimeout(240000); // Aumentar timeout global
+jest.setTimeout(60000); // Aumentar timeout global
 /**
  * Tests E2E para Caso de Uso 1: Reservar Plaza de Aparcamiento
  * 
@@ -43,79 +43,231 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
   });
 
   beforeEach(async () => {
+    // ✅ LIMPIEZA MÁS AGRESIVA al inicio
+    DataFixtures.clearGeneratedPlazaNumbers();
+    
+    // ✅ DOBLE VERIFICACIÓN: limpiar nuevamente después de un delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    DataFixtures.clearGeneratedPlazaNumbers();
+
     // Resetear array de reservas
     reservas = [];
+    
+    logStepV3('🔄 Estado inicial limpiado, iniciando setup', {
+      etiqueta: "SETUP",
+      tipo: "info"
+    });
     
     // Crear usuarios de prueba
     usuarios = await authHelper.createMultipleUsers();
     
-    // Crear plazas disponibles
-    plazas = await dataFixtures.createPlazas(usuarios.admin.token, {
-      count: 5,
-      estado: EstadoPlaza.LIBRE
+    // Crear plazas disponibles con reintentos mejorados
+    let intentosPlazas = 0;
+    const maxIntentosPlazas = 5; // ✅ AUMENTADO
+    
+    while (intentosPlazas < maxIntentosPlazas) {
+      try {
+        plazas = await dataFixtures.createPlazas(usuarios.admin.token, {
+          count: 5,
+          estado: EstadoPlaza.LIBRE
+        });
+        break;
+      } catch (error: any) {
+        intentosPlazas++;
+        logStepV3(`Intento ${intentosPlazas}/${maxIntentosPlazas} fallido creando plazas:`, {
+          etiqueta: "SETUP_PLAZAS",
+          tipo: "warning"
+        }, error.message);
+        
+        if (intentosPlazas >= maxIntentosPlazas) {
+          throw new Error(`No se pudieron crear plazas después de ${maxIntentosPlazas} intentos`);
+        }
+        
+        // ✅ LIMPIEZA MÁS AGRESIVA entre reintentos
+        DataFixtures.clearGeneratedPlazaNumbers();
+        await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ AUMENTADO
+      }
+    }
+    
+    // ✅ CREAR VEHÍCULO CON PREFIJO MÁS CORTO
+    let vehiculoCreado = false;
+    let intentosVehiculo = 0;
+    const maxIntentosVehiculo = 5;
+    
+    while (!vehiculoCreado && intentosVehiculo < maxIntentosVehiculo) {
+      try {
+        // ✅ PREFIJO MÁS CORTO: 'BC' en lugar de 'BCH'
+        const placaUnica = dataFixtures.generateUniquePlaca('BC');
+        
+        logStepV3(`🚗 Intento ${intentosVehiculo + 1}: Creando vehículo con placa ${placaUnica}`, {
+          etiqueta: "SETUP_VEHICULO",
+          tipo: "info"
+        });
+        
+        vehiculo = await dataFixtures.createVehiculo(
+          usuarios.cliente.user.id, 
+          usuarios.cliente.token,
+          {
+            placa: placaUnica,
+            marca: 'Toyota',
+            modelo: 'Corolla',
+            color: 'Blanco'
+          }
+        );
+        
+        vehiculoCreado = true;
+        logStepV3(`✅ Vehículo creado exitosamente: ${vehiculo.placa}`, {
+          etiqueta: "SETUP_VEHICULO",
+          tipo: "info"
+        });
+        
+      } catch (error: any) {
+        intentosVehiculo++;
+        logStepV3(`❌ Intento ${intentosVehiculo} fallido creando vehículo:`, {
+          etiqueta: "SETUP_VEHICULO",
+          tipo: "error"
+        }, error.message);
+        
+        if (intentosVehiculo >= maxIntentosVehiculo) {
+          throw new Error(`No se pudo crear vehículo después de ${maxIntentosVehiculo} intentos`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    logStepV3(`🎯 Setup completado: ${plazas.length} plazas, vehículo ${vehiculo.placa}`, {
+      etiqueta: "BEFOREHEACH",
+      tipo: "info"
     });
     
-    // Crear vehículo para el cliente
-    vehiculo = await dataFixtures.createVehiculo(
-      usuarios.cliente.user.id, 
-      usuarios.cliente.token,
-      {
-        placa: `P${Date.now().toString().substring(7)}`, // Placa única
-        marca: 'Toyota',
-        modelo: 'Corolla',
-        color: 'Blanco'
-      }
-    );
-
-    console.log(`🎯 Setup completado: ${plazas.length} plazas, vehículo ${vehiculo.placa}`);
+    // Delay final para estabilización
+    await new Promise(resolve => setTimeout(resolve, 1000));
   });
 
   // Agregar afterEach para limpieza
   afterEach(async () => {
+    // Añadir delay antes de empezar cleanup
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     try {
       const adminToken = await authHelper.getAdminToken();
+      
+      // Usar el nuevo método de limpieza completa CORREGIDO
+      await dataFixtures.cleanupComplete(adminToken);
 
-      // Usar el nuevo método de limpieza completa
-      await dataFixtures.cleanupCompleto(
-        adminToken,
-        reservas,        // Array de reservas creadas
-        [vehiculo],      // Array de vehículos creados
-        plazas          // Array de plazas creadas
-      );
+      logStepV3('Cleanup completo ejecutado exitosamente', { 
+        tipo: "info", 
+        etiqueta: 'AFTEREACH_SUCCESS' 
+      });
 
     } catch (error) {
       logStepV3(`Error en cleanup afterEach: ${error.message}`, { 
         tipo: "warning", 
-        etiqueta: 'AFTEREACH'
+        etiqueta: 'AFTEREACH' 
       });
       
-      // Limpieza de emergencia - intentar cancelar reservas al menos
+      // Limpieza de emergencia MEJORADA
       try {
+        logStepV3('Iniciando limpieza de emergencia', { 
+          tipo: "warning", 
+          etiqueta: 'EMERGENCY_START' 
+        });
+        
         const emergencyToken = await authHelper.getAdminToken();
+        
+        // Cancelar reservas de emergencia
         for (const reserva of reservas) {
           try {
             await request(app.getHttpServer())
               .post(`/reservas/${reserva.id}/cancelar`)
-              .set(authHelper.getAuthHeader(emergencyToken))
-              .timeout(5000);
-          } catch (innerError) {
-            // Capturar error específico de cada reserva
-            logStepV3(`Error cancelando reserva ${reserva.id}: ${innerError.message}`, { 
+              .set('Authorization', `Bearer ${emergencyToken}`)
+              .timeout(10000);
+              
+            logStepV3(`Reserva ${reserva.id} cancelada en emergencia`, { 
+              tipo: "info", 
+              etiqueta: 'EMERGENCY_RESERVA_SUCCESS' 
+            });
+          } catch (reservaError: any) {
+            logStepV3(`Error cancelando reserva ${reserva.id}: ${reservaError.message}`, { 
               tipo: "warning", 
-              etiqueta: 'AFTEREACH_EMERGENCY' 
+              etiqueta: 'EMERGENCY_RESERVA_FAIL' 
             });
           }
         }
-      } catch (emergencyError) {
-        // Capturar error del proceso de emergencia
-        logStepV3(`Error en cleanup de emergencia: ${emergencyError.message}`, { 
+        
+        // Esperar antes de continuar
+        logStepV3('Esperando 2 segundos antes de limpieza de vehículos', { 
+          etiqueta: 'EMERGENCY_WAIT' 
+        });
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Intentar eliminar vehículo de emergencia
+        if (vehiculo && vehiculo.id) {
+          try {
+            await request(app.getHttpServer())
+              .delete(`/vehiculos/${vehiculo.id}`)
+              .set('Authorization', `Bearer ${emergencyToken}`)
+              .timeout(10000);
+              
+            logStepV3(`Vehículo ${vehiculo.id} eliminado en emergencia`, { 
+              tipo: "info", 
+              etiqueta: 'EMERGENCY_VEHICULO_SUCCESS' 
+            });
+          } catch (vehiculoError: any) {
+            logStepV3(`Error eliminando vehículo ${vehiculo.id}: ${vehiculoError.message}`, { 
+              tipo: "warning", 
+              etiqueta: 'EMERGENCY_VEHICULO_FAIL' 
+            });
+          }
+        } else {
+          logStepV3('No hay vehículo para limpiar en emergencia', { 
+            etiqueta: 'EMERGENCY_NO_VEHICULO' 
+          });
+        }
+        
+        // Intentar eliminar plazas de emergencia
+        if (plazas && plazas.length > 0) {
+          for (const plaza of plazas) {
+            try {
+              await request(app.getHttpServer())
+                .delete(`/plazas/${plaza.id}`)
+                .set('Authorization', `Bearer ${emergencyToken}`)
+                .timeout(10000);
+                
+              logStepV3(`Plaza ${plaza.id} eliminada en emergencia`, { 
+                tipo: "info", 
+                etiqueta: 'EMERGENCY_PLAZA_SUCCESS' 
+              });
+            } catch (plazaError: any) {
+              logStepV3(`Error eliminando plaza ${plaza.id}: ${plazaError.message}`, { 
+                tipo: "warning", 
+                etiqueta: 'EMERGENCY_PLAZA_FAIL' 
+              });
+            }
+          }
+        }
+        
+        logStepV3('Limpieza de emergencia completada', { 
+          tipo: "info", 
+          etiqueta: 'EMERGENCY_COMPLETE' 
+        });
+        
+      } catch (emergencyError: any) {
+        logStepV3(`Error crítico en cleanup de emergencia: ${emergencyError.message}`, { 
           tipo: "error", 
-          etiqueta: 'AFTEREACH_EMERGENCY_FAIL' 
+          etiqueta: 'EMERGENCY_CRITICAL_FAIL' 
         });
       }
     } finally {
-      // Limpiar arrays para el próximo test (siempre se ejecuta)
-      reservas = [];
+      // Limpiar arrays SIEMPRE
+      const reservasCount = reservas.length;
+      reservas.length = 0;
+      
+      logStepV3(`Arrays limpiados: ${reservasCount} reservas removidas`, { 
+        tipo: "info", 
+        etiqueta: 'CLEANUP_ARRAYS' 
+      });
     }
   });
 
@@ -309,37 +461,59 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
  
   describe('Validaciones de negocio', () => {
     it('debe rechazar reserva de plaza ya ocupada', async () => {
-      // Ocupar la plaza con una reserva
-      await dataFixtures.createReserva(
-        usuarios.cliente.user.id,
-        plazas[0].id,
-        vehiculo.id,
-        usuarios.cliente.token
-      );
-
-      // Intentar reservar la misma plaza
-      const reservaData = {
+      // 1. Crear primera reserva DIRECTAMENTE (sin usar helper que falla)
+      const primeraReservaData = {
         usuario_id: usuarios.cliente.user.id,
         plaza_id: plazas[0].id,
         vehiculo_id: vehiculo.id,
-        fecha_inicio: dataFixtures.generateFutureDate(2),
+        fecha_inicio: dataFixtures.generateFutureDate(1),
+        fecha_fin: dataFixtures.generateFutureDate(3),
+      };
+
+      logStepV3(`Creando primera reserva directamente...`, { etiqueta: 'NEGOCIO' });
+
+      const primeraReservaResp = await request(app.getHttpServer())
+        .post('/reservas')
+        .set(authHelper.getAuthHeader(usuarios.cliente.token))
+        .send(primeraReservaData)
+        .timeout(10000)
+        .expect(201);
+
+      // Guardar para limpieza
+      reservas.push(primeraReservaResp.body.data);
+      logStepV3(`Primera reserva creada exitosamente: ${primeraReservaResp.body.data.id}`, { etiqueta: 'NEGOCIO' });
+
+      // 2. Esperar a que la plaza esté realmente ocupada
+      await dataFixtures.waitForPlazaState(
+        app, 
+        plazas[0].id, 
+        EstadoPlaza.OCUPADA, 
+        authHelper, 
+        usuarios, 
+        20, 
+        500
+      );
+
+      // 3. Intentar crear SEGUNDA reserva que debe fallar con 400
+      const segundaReservaData = {
+        usuario_id: usuarios.cliente.user.id,
+        plaza_id: plazas[0].id,
+        vehiculo_id: vehiculo.id,
+        fecha_inicio: dataFixtures.generateFutureDate(2), // Fechas solapadas
         fecha_fin: dataFixtures.generateFutureDate(5),
       };
 
-      // Esperar a que la plaza esté realmente ocupada
-      await dataFixtures.waitForPlazaState(app, plazas[0].id, EstadoPlaza.OCUPADA, authHelper, usuarios);
+      logStepV3(`Intentando segunda reserva en plaza ocupada...`, { etiqueta: 'NEGOCIO' });
 
-      logStepV3(`Intento de ocupar plaza reservada: User(${usuarios.cliente.user.id}; Plaza(${plazas[0].id}:${EstadoPlaza.OCUPADA}))`, { tipo: 'info', etiqueta: 'NEGOCIO' });
-      // Nuevo intento de reserva sobre plaza ocupada
       const response = await request(app.getHttpServer())
         .post('/reservas')
         .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .send(reservaData)
-        .expect(400);
+        .send(segundaReservaData)
+        .timeout(10000)
+        .expect(400); // Debe fallar
 
-      logStepV3('Respuesta error esperada', { tipo: 'error', etiqueta: 'NEGOCIO' }, response.body.message);
+      logStepV3('Respuesta error esperada:', { tipo: 'error', etiqueta: 'NEGOCIO' }, response.body.message);
       expect(response.body.message).toContain('La plaza no está disponible para reservar en el rango de fechas indicado');
-      
     });
 
     it('debe rechazar fechas de inicio en el pasado', async () => {
@@ -402,68 +576,165 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
     it('debe rechazar reserva con vehículo que no pertenece al usuario', async () => {
       logStepV3('Creando otro cliente y vehículo', { etiqueta: 'NEGOCIO' });
       
-      // Crear otro cliente
-      const otroCliente = await authHelper.createAndLoginUser(UserRole.CLIENTE);
+      // ✅ MEJORADO: Crear cliente con mejor manejo de errores
+      let otroCliente: AuthenticatedUser | undefined = undefined;
+      let intentos = 0;
+      const maxIntentos = 3;
+      
+      while (intentos < maxIntentos) {
+        try {
+          otroCliente = await authHelper.createAndLoginUser(UserRole.CLIENTE);
+          break;
+        } catch (error: any) {
+          intentos++;
+          logStepV3(`Intento ${intentos}/${maxIntentos} fallido creando cliente:`, {
+            etiqueta: "TEST_SETUP",
+            tipo: "warning"
+          }, error.message);
+          
+          if (intentos >= maxIntentos) {
+            throw new Error(`No se pudo crear cliente después de ${maxIntentos} intentos`);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      // ✅ VERIFICACIÓN: Asegurar que otroCliente fue asignada
+      if (!otroCliente) {
+        throw new Error('No se pudo crear cliente después de todos los intentos');
+      }
       
       // Validar que el cliente fue creado correctamente
       expect(otroCliente.user.id).toBeDefined();
       expect(otroCliente.token).toBeDefined();
+      expect(otroCliente.user.id).not.toBe(usuarios.cliente.user.id); // ✅ NUEVO: Verificar que es diferente
       
-      // Crear vehículo para el otro cliente con datos válidos
-      const placaUnica = dataFixtures.generateUniquePlaca();
-      const vehiculoData = {
-        placa: placaUnica,
-        marca: 'Mazda',
-        modelo: '3',
-        color: 'Negro',
-        usuario_id: otroCliente.user.id,
-      };
+      // ✅ MEJORADO: Crear vehículo con placa única y validación
+      let otroVehiculo: any | undefined = undefined;
+      intentos = 0;
       
-      logStepV3('Creando vehículo para otro cliente...', { etiqueta: 'NEGOCIO' });
-      
-      const otroVehiculoResp = await request(app.getHttpServer())
-        .post('/vehiculos')
-        .set(authHelper.getAuthHeader(otroCliente.token))
-        .send(vehiculoData)
-        .timeout(10000)
-        .expect(201);
-        
-      logStepV3('Vehículo creado para otro usuario:', { etiqueta: 'NEGOCIO' }, otroVehiculoResp.body.data.id);
+      while (intentos < maxIntentos) {
+        try {
+          const placaUnicaOtro = dataFixtures.generateUniquePlaca('OTR');
+          
+          // ✅ NUEVO: Validar que la placa es diferente a la del vehículo original
+          if (placaUnicaOtro === vehiculo.placa) {
+            throw new Error('Placa duplicada generada');
+          }
+          
+          logStepV3(`Intento ${intentos + 1}: Creando vehículo con placa ${placaUnicaOtro}`, {
+            etiqueta: "VEHICULO_SETUP",
+            tipo: "info"
+          });
+          
+          otroVehiculo = await dataFixtures.createVehiculo(
+            otroCliente.user.id,
+            otroCliente.token,
+            {
+              placa: placaUnicaOtro,
+              marca: 'Mazda',
+              modelo: '3',
+              color: 'Negro'
+            }
+          );
+          
+          logStepV3(`✅ Vehículo creado exitosamente: ${otroVehiculo.placa}`, {
+            etiqueta: "VEHICULO_SETUP",
+            tipo: "info"
+          });
+          break;
+          
+        } catch (error: any) {
+          intentos++;
+          logStepV3(`Intento ${intentos}/${maxIntentos} fallido creando vehículo:`, {
+            etiqueta: "VEHICULO_SETUP",
+            tipo: "error"
+          }, {
+            error: error.message,
+            status: error.status,
+            response: error.response?.body
+          });
+          
+          if (intentos >= maxIntentos) {
+            logStepV3(`❌ FALLO CRÍTICO: No se pudo crear vehículo después de ${maxIntentos} intentos`, {
+              etiqueta: "VEHICULO_SETUP",
+              tipo: "error"
+            });
+            throw new Error(`No se pudo crear vehículo para test después de ${maxIntentos} intentos: ${error.message}`);
+          }
+          
+          // Esperar más tiempo entre intentos
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      if (!otroVehiculo) {
+        throw new Error('No se pudo crear vehículo después de todos los intentos');
+      }
 
-      // Intentar crear reserva usando el vehículo del otro usuario
+      // Validar que el vehículo fue creado correctamente
+      expect(otroVehiculo.id).toBeDefined();
+      expect(otroVehiculo.placa).toBeDefined();
+      expect(otroVehiculo.usuario_id).toBe(otroCliente.user.id);
+
+      // Asegurarse de que tenemos una plaza disponible
+      if (!plazas || plazas.length === 0) {
+        throw new Error('No hay plazas disponibles para el test');
+      }
+
+      // ✅ MEJORADO: Intentar crear reserva usando el vehículo del otro usuario
       const reservaData = {
         usuario_id: usuarios.cliente.user.id,  // Usuario original
         plaza_id: plazas[0].id,
-        vehiculo_id: otroVehiculoResp.body.data.id,  // Vehículo de otro usuario
+        vehiculo_id: otroVehiculo.id,  // Vehículo de otro usuario ❌
         fecha_inicio: dataFixtures.generateFutureDate(1),
         fecha_fin: dataFixtures.generateFutureDate(4),
       };
       
-      logStepV3('Intentando reservar con vehículo ajeno...', { etiqueta: 'NEGOCIO' });
-      logStepV3(`Cliente original: ${reservaData.usuario_id}, Vehículo ajeno: ${reservaData.vehiculo_id}`, { etiqueta: 'NEGOCIO' });
+      logStepV3('Intentando reservar con vehículo ajeno...', { 
+        etiqueta: 'NEGOCIO' 
+      }, {
+        usuarioReserva: usuarios.cliente.user.id,
+        usuarioVehiculo: otroVehiculo.usuario_id,
+        vehiculoId: otroVehiculo.id,
+        plazaId: plazas[0].id
+      });
 
       const response = await request(app.getHttpServer())
         .post('/reservas')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
+        .set(authHelper.getAuthHeader(usuarios.cliente.token)) // Token del usuario original
         .send(reservaData)
-        .timeout(10000)
+        .timeout(15000)
         .expect(400); // Debe fallar con BadRequest
 
-      logStepV3('Respuesta error esperada:', { tipo: 'error', etiqueta: 'NEGOCIO' }, response.body.message);
+      logStepV3('Respuesta error esperada:', { 
+        tipo: 'error', 
+        etiqueta: 'NEGOCIO' 
+      }, response.body.message);
       
-      // Verificar que el mensaje de error es el esperado
-      expect(response.body.message).toMatch(/vehículo.*no.*pertenece.*usuario|no.*permitido.*vehículo.*otro.*usuario/i);
+      // ✅ MEJORADO: Verificar que el mensaje de error es el esperado
+      expect(response.body.message).toMatch(
+        /vehículo.*no.*pertenece.*usuario|no.*permitido.*vehículo.*otro.*usuario|el.*vehículo.*especificado.*no.*pertenece.*al.*usuario/i
+      );
 
-      // Cleanup del vehículo creado para evitar interferencias
+      // ✅ NUEVO: Cleanup inmediato del vehículo creado para este test
       try {
         await request(app.getHttpServer())
-          .delete(`/vehiculos/${otroVehiculoResp.body.data.id}`)
-          .set(authHelper.getAuthHeader(otroCliente.token))
-          .timeout(5000);
-      } catch (cleanupError) {
-        logStepV3('Error limpiando vehículo del otro usuario:', { tipo: 'warning', etiqueta: 'NEGOCIO' }, cleanupError.message);
+          .delete(`/vehiculos/${otroVehiculo.id}`)
+          .set(authHelper.getAuthHeader(usuarios.admin.token))
+          .timeout(10000);
+          
+        logStepV3(`Vehículo ${otroVehiculo.id} eliminado tras test`, {
+          etiqueta: "TEST_CLEANUP",
+          tipo: "info"
+        });
+      } catch (cleanupError: any) {
+        logStepV3(`Warning: No se pudo eliminar vehículo ${otroVehiculo.id}:`, {
+          etiqueta: "TEST_CLEANUP",
+          tipo: "warning"
+        }, cleanupError.message);
       }
     });
+
 
   });
 

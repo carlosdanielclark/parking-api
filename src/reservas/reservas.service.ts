@@ -7,7 +7,6 @@ import { Plaza, EstadoPlaza } from '../entities/plaza.entity';
 import { User, UserRole } from '../entities/user.entity';
 import { Vehiculo } from '../entities/vehiculo.entity';
 import { CreateReservaDto } from './dto/create-reserva.dto';
-import { UpdateReservaDto } from './dto/update-reserva.dto';
 import { ReservaTransactionService } from './services/reserva-transaction.service';
 import { LoggingService } from '../logging/logging.service';
 
@@ -43,9 +42,9 @@ export class ReservasService {
    * @returns Reserva creada con relaciones completas
    */
   async create(createReservaDto: CreateReservaDto, currentUser: any): Promise<Reserva> {
-    const { usuario_id } = createReservaDto;
+    const { usuario_id, plaza_id, vehiculo_id } = createReservaDto;
 
-    this.logger.log(`Solicitud de reserva: Plaza ${createReservaDto.plaza_id} por usuario ${currentUser.userId}`);
+    this.logger.log(`Solicitud de reserva: Plaza ${plaza_id} por usuario ${currentUser.userId}`);
 
     // 1. Validar permisos: solo el propio usuario pueden crear reservas para ese usuario
     if (currentUser.role === UserRole.ADMIN) {
@@ -54,7 +53,7 @@ export class ReservasService {
         this.logger.warn(`Acceso denegado: admin ${currentUser.userId} intento crear reserva para otro usuario ${usuario_id}`);
         throw new ForbiddenException('Los administradores no pueden crear reservas en nombre de otros usuarios');
       }
-      // Sino admin crea solo para sí mismo, se permite
+      // Si el admin crea para sí mismo, se permite
     } else {
       // Clientes solo pueden crear reservas para sí mismos
       if (currentUser.userId !== usuario_id) {
@@ -91,16 +90,72 @@ export class ReservasService {
 
     // 3. Delegar toda lógica compleja, transaccional y validación con concurrencia al servicio transaccional
     try {
-      const reservaCreada = await this.reservaTransactionService.createReservaWithTransaction(
+      // CRÍTICA: Validar que el vehículo pertenece al usuario
+      const vehiculo = await this.vehiculoRepository.findOne({
+        where: { id: vehiculo_id },
+        relations: ['usuario']
+      });
+
+      if (!vehiculo) {
+        this.logger.warn(`Vehículo ${vehiculo_id} no encontrado`);
+        throw new BadRequestException('Vehículo no encontrado');
+      }
+
+      // Dependiendo de cómo esté modelada la relación, usar vehiculo.usuario.id o vehiculo.usuarioId
+      const propietarioId = (vehiculo as any).usuario?.id ?? (vehiculo as any).usuarioId;
+      if (!propietarioId || propietarioId !== usuario_id) {
+        this.logger.warn(`Vehículo ${vehiculo_id} no pertenece al usuario ${usuario_id}`);
+        throw new BadRequestException('El vehículo especificado no pertenece al usuario');
+      }
+
+      // CRÍTICA: Validar disponibilidad de plaza en el rango de fechas
+      // Usar condición de solape segura: (start < fin2) AND (end > ini2)
+      const solapesCount = await this.reservaRepository
+        .createQueryBuilder('reserva')
+        .where('reserva.plaza_id = :plazaId', { plazaId: plaza_id })
+        .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
+        .andWhere('(reserva.fecha_inicio < :fin AND reserva.fecha_fin > :inicio)', { inicio: inicioDate, fin: finDate })
+        .getCount();
+
+      if (solapesCount > 0) {
+        this.logger.warn(`Conflicto de reserva detectado. Cantidad: ${solapesCount}`);
+        throw new BadRequestException('La plaza no está disponible para reservar en el rango de fechas indicado');
+      }
+
+      // CRÍTICA: Validar que la plaza existe y está activa
+      const plaza = await this.plazaRepository.findOne({
+        where: { 
+          id: plaza_id,
+          estado: EstadoPlaza.LIBRE 
+        }
+      });
+
+      if (!plaza) {
+        this.logger.warn(`Plaza ${plaza_id} no encontrada o no activa`);
+        throw new BadRequestException('Plaza no encontrada o no disponible');
+      }
+
+      // Validar que el vehículo no tenga reservas activas en el mismo período
+      const reservasVehiculoCount = await this.reservaRepository
+        .createQueryBuilder('reserva')
+        .where('reserva.vehiculo_id = :vehiculoId', { vehiculoId: vehiculo_id })
+        .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
+        .andWhere('(reserva.fecha_inicio < :fin AND reserva.fecha_fin > :inicio)', { inicio: inicioDate, fin: finDate })
+        .getCount();
+
+      if (reservasVehiculoCount > 0) {
+        this.logger.warn(`El vehículo ${vehiculo_id} ya tiene ${reservasVehiculoCount} reserva(s) activas en el periodo`);
+        throw new BadRequestException('El vehículo ya tiene una reserva activa en el período solicitado');
+      }
+
+      // Continuar con la creación transaccional (servicio especializado)
+      return await this.reservaTransactionService.createReservaWithTransaction(
         createReservaDto, 
         currentUser
       );
-
-      this.logger.log(`Reserva creada exitosamente: ${reservaCreada.id} - Plaza ${reservaCreada.plaza.numero_plaza}`);
-      
-      return reservaCreada;
     } catch (error) {
-      this.logger.error(`Error al crear reserva: ${error.message}`, error.stack);
+      // Mejor logging y rethrow (mantener stack)
+      this.logger.error(`Error al crear reserva: ${error?.message ?? error}`, error?.stack ?? '');
       throw error;
     }
   }
@@ -138,7 +193,7 @@ export class ReservasService {
       
       return reservas;
     } catch (error) {
-      this.logger.error(`Error al obtener reservas: ${error.message}`, error.stack);
+      this.logger.error(`Error al obtener reservas: ${error?.message ?? error}`, error?.stack ?? '');
       throw new BadRequestException('Error interno al obtener reservas');
     }
   }
@@ -171,7 +226,7 @@ export class ReservasService {
       
       return reservas;
     } catch (error) {
-      this.logger.error(`Error al obtener reservas del usuario ${usuarioId}: ${error.message}`, error.stack);
+      this.logger.error(`Error al obtener reservas del usuario ${usuarioId}: ${error?.message ?? error}`, error?.stack ?? '');
       throw new BadRequestException('Error interno al obtener reservas del usuario');
     }
   }
@@ -196,7 +251,7 @@ export class ReservasService {
       
       return reservasActivas;
     } catch (error) {
-      this.logger.error(`Error al obtener reservas activas: ${error.message}`, error.stack);
+      this.logger.error(`Error al obtener reservas activas: ${error?.message ?? error}`, error?.stack ?? '');
       throw new BadRequestException('Error interno al obtener reservas activas');
     }
   }
@@ -218,40 +273,47 @@ export class ReservasService {
     });
 
     if (!reserva) {
+      this.logger.warn(`Reserva ${reservaId} no encontrada`);
       throw new NotFoundException('Reserva no encontrada');
     }
 
     // Validar permisos
     if (currentUser.role !== UserRole.ADMIN && reserva.usuario.id !== currentUser.userId) {
+      this.logger.warn(`Acceso denegado a cancelar reserva ${reservaId} por usuario ${currentUser.userId}`);
       throw new ForbiddenException('Solo puedes cancelar tus propias reservas');
     }
 
     if (reserva.estado !== EstadoReservaDTO.ACTIVA) {
+      this.logger.warn(`Reserva ${reservaId} con estado ${reserva.estado} no es cancelable`);
       throw new BadRequestException('Solo se pueden cancelar reservas activas');
     }
 
     try {
       // Actualizar estado de reserva y plaza
       reserva.estado = EstadoReservaDTO.CANCELADA;
-      await this.reservaRepository.save(reserva);
+      const savedReserva = await this.reservaRepository.save(reserva);
 
-      await this.plazaRepository.update(reserva.plaza.id, {
-        estado: EstadoPlaza.LIBRE
-      });
+      if (reserva.plaza && reserva.plaza.id) {
+        await this.plazaRepository.update(reserva.plaza.id, {
+          estado: EstadoPlaza.LIBRE
+        });
+      } else {
+        this.logger.warn(`La reserva ${reservaId} no tenía plaza vinculada correctamente`);
+      }
 
       // Logging de cancelación
       await this.loggingService.logReservationCancelled(
         currentUser.userId,
         reserva.id,
-        reserva.plaza.id,
+        reserva.plaza?.id ?? null,
         { razon: 'Cancelada por usuario' }
       );
 
       this.logger.log(`Reserva cancelada exitosamente: ${reservaId}`);
-      return reserva;
+      return savedReserva;
 
     } catch (error) {
-      this.logger.error(`Error al cancelar reserva ${reservaId}: ${error.message}`, error.stack);
+      this.logger.error(`Error al cancelar reserva ${reservaId}: ${error?.message ?? error}`, error?.stack ?? '');
       throw new BadRequestException('Error interno al cancelar reserva');
     }
   }
@@ -270,7 +332,7 @@ export class ReservasService {
     try {
       return await this.reservaTransactionService.finalizarReservaWithTransaction(reservaId);
     } catch (error) {
-      this.logger.error(`Error al finalizar reserva ${reservaId}: ${error.message}`, error.stack);
+      this.logger.error(`Error al finalizar reserva ${reservaId}: ${error?.message ?? error}`, error?.stack ?? '');
       throw error;
     }
   }
