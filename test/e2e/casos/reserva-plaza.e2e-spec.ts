@@ -5,7 +5,7 @@ import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
 import { AuthHelper, AuthenticatedUser } from '../../helpers/auth-helper';
 import { DataFixtures } from '../../helpers/data-fixtures';
-import { EstadoPlaza } from '../../../src/entities/plaza.entity';
+import { EstadoPlaza, TipoPlaza } from '../../../src/entities/plaza.entity';
 import { EstadoReservaDTO } from '../../../src/entities/reserva.entity';
 import { logStepV3 } from '../../helpers/log-util';
 import { UserRole } from '../../../src/entities/user.entity';
@@ -797,6 +797,179 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       expect(response.body.message).toContain('No auth token');
     });
 
+  });
+
+  describe('Tests de concurrencia', () => {
+    it('debe manejar correctamente intentos simultáneos de reservar la misma plaza', async () => {
+      // Crear segundo cliente y vehículo
+      const cliente2 = await authHelper.createAndLoginUser(UserRole.CLIENTE);
+      const vehiculo2 = await dataFixtures.createVehiculo(
+        cliente2.user.id,
+        cliente2.token,
+        { placa: 'TEST002' }
+      );
+
+      const reservaData1 = {
+        usuario_id: usuarios.cliente.user.id,
+        plaza_id: plazas[0].id,
+        vehiculo_id: vehiculo.id,
+        fecha_inicio: dataFixtures.generateFutureDate(1),
+        fecha_fin: dataFixtures.generateFutureDate(4),
+      };
+
+      const reservaData2 = {
+        usuario_id: cliente2.user.id,
+        plaza_id: plazas[0].id, // Misma plaza
+        vehiculo_id: vehiculo2.id,
+        fecha_inicio: dataFixtures.generateFutureDate(1),
+        fecha_fin: dataFixtures.generateFutureDate(4),
+      };
+
+      // Ejecutar ambas reservas simultáneamente
+      const [response1, response2] = await Promise.allSettled([
+        request(app.getHttpServer())
+          .post('/reservas')
+          .set(authHelper.getAuthHeader(usuarios.cliente.token))
+          .send(reservaData1),
+        request(app.getHttpServer())
+          .post('/reservas')
+          .set(authHelper.getAuthHeader(cliente2.token))
+          .send(reservaData2),
+      ]);
+
+      // Una debe ser exitosa y la otra fallar
+      const exitosas = [response1, response2].filter(r => 
+        r.status === 'fulfilled' && r.value.status === 201
+      );
+      const fallidas = [response1, response2].filter(r => 
+        r.status === 'fulfilled' && r.value.status === 400
+      );
+
+      expect(exitosas).toHaveLength(1);
+      expect(fallidas).toHaveLength(1);
+
+      console.log('✅ Concurrencia manejada correctamente: 1 exitosa, 1 fallida');
+    });
+  });
+
+  describe('Tipos de plaza específicos', () => {
+    it('debe permitir reservar plaza para discapacitados', async () => {
+      // Crear plaza específica para discapacitados
+      const plazaDiscapacitados = await dataFixtures.createPlazas(
+        usuarios.admin.token,
+        { count: 1, tipo: TipoPlaza.DISCAPACITADO }
+      );
+
+      const reservaData = {
+        usuario_id: usuarios.cliente.user.id,
+        plaza_id: plazaDiscapacitados[0].id,
+        vehiculo_id: vehiculo.id,
+        fecha_inicio: dataFixtures.generateFutureDate(1),
+        fecha_fin: dataFixtures.generateFutureDate(4),
+      };
+
+      const response = await request(app.getHttpServer())
+        .post('/reservas')
+        .set(authHelper.getAuthHeader(usuarios.cliente.token))
+        .send(reservaData)
+        .expect(201);
+
+      expect(response.body.data.plaza.tipo).toBe(TipoPlaza.DISCAPACITADO);
+    });
+
+    it('debe permitir reservar plaza eléctrica', async () => {
+      // Crear plaza eléctrica
+      const plazaElectrica = await dataFixtures.createPlazas(
+        usuarios.admin.token,
+        { count: 1, tipo: TipoPlaza.ELECTRICO }
+      );
+
+      const reservaData = {
+        usuario_id: usuarios.cliente.user.id,
+        plaza_id: plazaElectrica[0].id,
+        vehiculo_id: vehiculo.id,
+        fecha_inicio: dataFixtures.generateFutureDate(1),
+        fecha_fin: dataFixtures.generateFutureDate(4),
+      };
+
+      const response = await request(app.getHttpServer())
+        .post('/reservas')
+        .set(authHelper.getAuthHeader(usuarios.cliente.token))
+        .send(reservaData)
+        .expect(201);
+
+      expect(response.body.data.plaza.tipo).toBe(TipoPlaza.ELECTRICO);
+    });
+  });
+  
+  describe('Gestión posterior de reservas', () => {
+    it('debe permitir cancelar una reserva activa', async () => {
+      // Crear reserva
+      const reserva = await dataFixtures.createReserva(
+        usuarios.cliente.token,
+        {
+          usuario_id: usuarios.cliente.user.id,
+          plaza: plazas[0],
+          vehiculo_id: vehiculo.id,
+          fecha_inicio: new Date(dataFixtures.generateFutureDate(1)), // 1 hora en futuro
+          fecha_fin: new Date(dataFixtures.generateFutureDate(4)) // 4 horas en futuro
+        }
+      );
+
+      // Cancelar reserva
+      const response = await request(app.getHttpServer())
+        .post(`/reservas/${reserva.id}/cancelar`)
+        .set(authHelper.getAuthHeader(usuarios.cliente.token))
+        .expect(200);
+
+      expect(response.body.data.estado).toBe(EstadoReservaDTO.CANCELADA);
+
+      // Verificar que la plaza vuelve a estar libre
+      const plazaResponse = await request(app.getHttpServer())
+        .get(`/plazas/${plazas[0].id}`)
+        .set(authHelper.getAuthHeader(usuarios.empleado.token))
+        .expect(200);
+
+      expect(plazaResponse.body.data.estado).toBe(EstadoPlaza.LIBRE);
+    });
+  });
+
+  describe('Rendimiento con múltiples reservas', () => {
+    it('debe manejar múltiples reservas simultáneas en plazas diferentes', async () => {
+      // Crear múltiples vehículos
+      const vehiculos = await dataFixtures.createMultipleVehiculos(
+        usuarios.cliente.user.id,
+        usuarios.cliente.token,
+        3
+      );
+
+      // Crear reservas para diferentes plazas simultáneamente
+      const reservasPromises = vehiculos.map((veh, index) => 
+        dataFixtures.createReserva(
+          usuarios.cliente.token,
+          {
+            usuario_id: usuarios.cliente.user.id,
+            plaza: plazas[index],
+            vehiculo_id: veh.id,
+            fecha_inicio: new Date(dataFixtures.generateFutureDate(index + 1)),
+            fecha_fin: new Date(dataFixtures.generateFutureDate(index + 4))
+          }
+        )
+      );
+
+      const startTime = Date.now();
+      const reservas = await Promise.all(reservasPromises);
+      const duration = Date.now() - startTime;
+
+      expect(reservas).toHaveLength(3);
+      expect(duration).toBeLessThan(5000); // Menos de 5 segundos
+      
+      reservas.forEach(reserva => {
+        expect(reserva.estado).toBe(EstadoReservaDTO.ACTIVA);
+      });
+
+      console.log(`⚡ ${reservas.length} reservas creadas en ${duration}ms`);
+    });
   });
 
 
