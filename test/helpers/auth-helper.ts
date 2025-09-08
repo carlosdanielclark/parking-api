@@ -3,6 +3,7 @@ import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { UserRole } from '../../src/entities/user.entity';
 import { logStepV3 } from './log-util';
+import { DataFixtures } from './data-fixtures';
 
 export interface AuthenticatedUser {
   user: {
@@ -15,47 +16,46 @@ export interface AuthenticatedUser {
 }
 
 export class AuthHelper {
-  constructor(private app: INestApplication) {}
+  // NUEVO: instancia de DataFixtures para delegar creación de vehículos
+  private dataFixtures: DataFixtures;
 
-    /**
+  constructor(private app: INestApplication) {
+    this.dataFixtures = new DataFixtures(app);
+  }
+
+  /**
    * Crear un cliente con un vehículo asociado
-   * Útil para tests que requieren un cliente con vehículo
-   * 
-   * @returns Objeto con el cliente autenticado y el vehículo creado
+   * Útil para tests que requieren un cliente con vehículo.
+   * EDITADO: delega la creación de vehículo a DataFixtures.createVehiculo
    */
   async createClienteWithVehiculo(): Promise<{
     cliente: AuthenticatedUser;
     vehiculo: any;
   }> {
-    // Crear cliente
+    // 1) Crear cliente y obtener token
     const cliente = await this.createAndLoginUser(UserRole.CLIENTE);
-    
-    // Crear vehículo para el cliente
-    const vehiculoData = {
-      placa: `TEST-${Date.now()}`,
-      marca: 'Test',
-      modelo: 'Model',
-      color: 'Color'
-    };
 
-    const response = await request(this.app.getHttpServer())
-      .post('/vehiculos')
-      .set(this.getAuthHeader(cliente.token))
-      .send(vehiculoData)
-      .expect(201);
+    // 2) Crear vehículo delegando al helper centralizado
+    try {
+      const vehiculo = await this.dataFixtures.createVehiculo(
+        cliente.user.id,
+        cliente.token,
+        {}
+      );
 
-    return {
-      cliente,
-      vehiculo: response.body.data
-    };
+      return { cliente, vehiculo };
+    } catch (error: any) {
+      const serverBody = error?.response?.body ?? error?.response ?? error?.message;
+      logStepV3('❌ Error creando vehículo en createClienteWithVehiculo', {
+        etiqueta: 'HELPER',
+        tipo: 'error',
+      }, serverBody);
+      throw error;
+    }
   }
 
   /**
    * Crear y hacer login de un usuario de prueba
-   * 
-   * @param role - Rol del usuario a crear
-   * @param customData - Datos personalizados opcionales
-   * @returns Usuario autenticado con token
    */
   async createAndLoginUser(
     role: UserRole = UserRole.CLIENTE,
@@ -67,7 +67,7 @@ export class AuthHelper {
   ): Promise<AuthenticatedUser> {
     const timestamp = Date.now();
     const baseEmail = customData.email || `test-${role.toLowerCase()}-${timestamp}@test.com`;
-    
+
     const userData = {
       nombre: customData.nombre || `Test ${role}`,
       email: baseEmail,
@@ -81,19 +81,18 @@ export class AuthHelper {
       .send(userData)
       .expect(201);
 
-    // Si no es cliente, necesitamos actualizar el rol (solo admin puede hacerlo)
+    // Si no es cliente, actualizar el rol (requiere admin)
     let userResponse = registerResponse;
     if (role !== UserRole.CLIENTE) {
-      // Usar admin predeterminado para cambiar rol
       const adminToken = await this.getAdminToken();
-      
+
       await request(this.app.getHttpServer())
         .patch(`/users/${registerResponse.body.data.user.id}`)
         .set(this.getAuthHeader(adminToken))
         .send({ role })
         .expect(200);
 
-      // Hacer login nuevamente para obtener token actualizado
+      // Re-login
       userResponse = await request(this.app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -111,9 +110,6 @@ export class AuthHelper {
 
   /**
    * Crear múltiples usuarios de diferentes roles
-   * Útil para tests que requieren interacciones entre roles
-   * 
-   * @returns Objeto con usuarios de cada rol
    */
   async createMultipleUsers(): Promise<{
     admin: AuthenticatedUser;
@@ -121,19 +117,19 @@ export class AuthHelper {
     cliente: AuthenticatedUser;
   }> {
     const timestamp = Date.now();
-    
+
     const [admin, empleado, cliente] = await Promise.all([
       this.createAndLoginUser(UserRole.ADMIN, {
         email: `admin-${timestamp}@test.com`,
-        nombre: 'Admin Test'
+        nombre: 'Admin Test',
       }),
       this.createAndLoginUser(UserRole.EMPLEADO, {
         email: `empleado-${timestamp}@test.com`,
-        nombre: 'Empleado Test'
+        nombre: 'Empleado Test',
       }),
       this.createAndLoginUser(UserRole.CLIENTE, {
         email: `cliente-${timestamp}@test.com`,
-        nombre: 'Cliente Test'
+        nombre: 'Cliente Test',
       }),
     ]);
 
@@ -142,17 +138,11 @@ export class AuthHelper {
 
   /**
    * Obtener token del administrador predeterminado del sistema
-   * 
-   * @returns Token JWT del admin
-   */
-
-  /**
-   * Obtener token del administrador predeterminado del sistema
    * Mejorado con reintentos y mejor manejo de errores
    */
   async getAdminToken(maxRetries = 5): Promise<string> {
     let attempts = 0;
-    
+
     while (attempts < maxRetries) {
       try {
         const response = await request(this.app.getHttpServer())
@@ -161,51 +151,33 @@ export class AuthHelper {
             email: 'admin@parking.com',
             password: 'admin123',
           })
-          .timeout(15000) // Aumentar timeout a 15 segundos
+          .timeout(15000)
           .expect(200);
 
-          // DEBUG: Log completa de la respuesta
-          /*logStepV3('🔍 [DEBUG] Respuesta completa del login admin:', {
-            etiqueta: "GetAdminToken",
-            tipo: "info"
-          }, JSON.stringify(response.body, null, 2));*/
+        // Extracción flexible del token
+        const token =
+          response.body.data?.access_token ||
+          response.body.access_token ||
+          response.body.data?.token;
 
-
-          // Extracción flexible del token
-        const token = response.body.data?.access_token 
-          || response.body.access_token 
-          || response.body.data?.token;
-        
         if (token) {
-          logStepV3(`Token de admin: ${token}`, {etiqueta:"GetAdminToken"});
           return token;
         }
-        
-        throw new Error('Token no encontrado en la respuesta del servidor');
 
-      } catch (error) {
+        throw new Error('Token no encontrado en la respuesta del servidor');
+      } catch (error: any) {
         attempts++;
-        /*logStepV3(`Intento ${attempts}/${maxRetries} fallido para obtener token admin:`, { 
-                tipo: "warning", 
-                etiqueta: 'GetAdminToken'
-              }, error.message);*/
         if (attempts >= maxRetries) {
           throw new Error(`Failed to get admin token after ${maxRetries} attempts: ${error.message}`);
         }
-        
-        // Esperar con backoff exponencial
+
         const delayMs = 1000 * Math.pow(2, attempts);
-        /*logStepV3(`⏳ Esperando ${delayMs}ms antes de reintentar...`, {
-          tipo: "warning",
-          etiqueta: "GetAdminToken"
-        });*/
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
-    
+
     throw new Error('Unexpected flow in getAdminToken');
   }
-
 
   /**
    * Validar que un token funciona correctamente
@@ -217,18 +189,15 @@ export class AuthHelper {
         .set(this.getAuthHeader(token))
         .timeout(5000)
         .expect(200);
-      
+
       return response.body.success === true;
     } catch {
       return false;
     }
   }
 
-
   /**
    * Obtener token del empleado predeterminado del sistema
-   * 
-   * @returns Token JWT del empleado
    */
   async getEmpleadoToken(): Promise<string> {
     try {
@@ -241,15 +210,13 @@ export class AuthHelper {
         .expect(200);
 
       return response.body.data.access_token;
-    } catch (error) {
+    } catch (error: any) {
       throw new Error(`No se pudo obtener token de empleado: ${error.message}`);
     }
   }
 
   /**
    * Obtener token del cliente predeterminado del sistema
-   * 
-   * @returns Token JWT del cliente
    */
   async getClienteToken(): Promise<string> {
     try {
@@ -262,28 +229,20 @@ export class AuthHelper {
         .expect(200);
 
       return response.body.data.access_token;
-    } catch (error) {
+    } catch (error: any) {
       throw new Error(`No se pudo obtener token de cliente: ${error.message}`);
     }
   }
 
   /**
    * Generar headers de autorización para requests
-   * 
-   * @param token - Token JWT
-   * @returns Headers de autorización
    */
   getAuthHeader(token: string): { Authorization: string } {
     return { Authorization: `Bearer ${token}` };
   }
 
-
   /**
    * Hacer login con credenciales específicas
-   * 
-   * @param email - Email del usuario
-   * @param password - Contraseña del usuario
-   * @returns Token JWT
    */
   async login(email: string, password: string): Promise<string> {
     const response = await request(this.app.getHttpServer())
@@ -296,9 +255,6 @@ export class AuthHelper {
 
   /**
    * Verificar que un token es válido
-   * 
-   * @param token - Token a verificar
-   * @returns true si el token es válido
    */
   async verifyToken(token: string): Promise<boolean> {
     try {
@@ -315,9 +271,6 @@ export class AuthHelper {
 
   /**
    * Obtener información del usuario autenticado
-   * 
-   * @param token - Token JWT
-   * @returns Información del usuario
    */
   async getUserInfo(token: string): Promise<any> {
     const response = await request(this.app.getHttpServer())
@@ -330,10 +283,6 @@ export class AuthHelper {
 
   /**
    * Limpiar usuarios de prueba (opcional)
-   * Elimina usuarios creados durante los tests
-   * 
-   * @param adminToken - Token de administrador
-   * @param userIds - IDs de usuarios a eliminar
    */
   async cleanupUsers(adminToken: string, userIds: string[]): Promise<void> {
     for (const userId of userIds) {
@@ -369,5 +318,17 @@ export class AuthHelper {
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substring(7);
     return `test-${role.toLowerCase()}-${timestamp}-${randomSuffix}@test.com`;
+  }
+
+  /**
+   * OBSOLETO: Generar placa válida.
+   * Mantenido por compatibilidad; la creación de vehículos ahora delega a DataFixtures.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private generateValidPlaca(): string {
+    const timestamp = Date.now().toString().slice(-6);
+    const prefix = 'TST';
+    const placa = `${prefix}${timestamp}`;
+    return placa;
   }
 }

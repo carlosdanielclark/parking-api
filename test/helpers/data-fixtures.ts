@@ -24,9 +24,8 @@ export interface ReservaOptions {
   horasEnElFuturo?: number;
   duracionHoras?: number;
   estado?: EstadoReservaDTO;
-  fecha_inicio?: string;  // Agregar esta propiedad
-  fecha_fin?: string;     // Agregar esta propiedad
-
+  fecha_inicio?: string;
+  fecha_fin?: string;
 }
 
 /**
@@ -37,9 +36,11 @@ export class DataFixtures {
   private static vehiculoCounter = 0;
   private static testRunId: string;
   private static generatedPlazaNumbers: Set<string> = new Set();
+
+  // EDITADO: mantener contador y set de placas; añadir limpieza específica
   private static plazaCounter = 0;
-  private static placaCounter = 0; 
-  private static generatedPlacas: Set<string> = new Set(); 
+  private static placaCounter = 0;
+  private static generatedPlacas: Set<string> = new Set();
 
   private createdPlazaIds: Set<number> = new Set();
   private createdVehiculoIds: Set<string> = new Set();
@@ -62,25 +63,32 @@ export class DataFixtures {
     // Limpiar sets
     DataFixtures.generatedPlazaNumbers.clear();
     DataFixtures.generatedPlacas.clear();
-    
+
     // ✅ RESET COMPLETO de contadores para evitar acumulación
     DataFixtures.vehiculoCounter = 0;
     DataFixtures.placaCounter = 0;
     DataFixtures.plazaCounter = 0;
-    
+
     logStepV3('🧹 Estado estático limpiado completamente', {
-      etiqueta: "CLEAR_STATE",
-      tipo: "info"
+      etiqueta: 'CLEAR_STATE',
+      tipo: 'info',
     });
-}
+  }
+
+  /**
+   * NUEVO: Limpia únicamente el Set de placas generadas y resetea el contador de placas.
+   * Útil para specs que generan muchas placas sin tocar el estado de plazas.
+   */
+  static clearGeneratedPlacas(): void {
+    DataFixtures.generatedPlacas.clear();
+    DataFixtures.placaCounter = 0;
+    logStepV3('🧹 generatedPlacas limpiado', { etiqueta: 'DATA_FIXTURES', tipo: 'info' });
+  }
 
   /**
    * Crea múltiples plazas de parking
    */
-  async createPlazas(
-    adminToken: string,
-    options: PlazaOptions = {}
-  ): Promise<any[]> {
+  async createPlazas(adminToken: string, options: PlazaOptions = {}): Promise<any[]> {
     const {
       count = 5,
       prefix = 'A',
@@ -89,20 +97,39 @@ export class DataFixtures {
     } = options;
 
     const plazas: any[] = [];
-    
+
     for (let i = 0; i < count; i++) {
       let attempts = 0;
       let success = false;
-      const maxAttempts = 5; // Aumentado de 3 a 5
+      const maxAttempts = 5;
       let lastError: any = null;
-      
+
       while (attempts < maxAttempts && !success) {
         try {
-          const numeroPlaza = this.generarNumeroPlazaUnico(prefix);
+          const numeroPlaza = await this.generarNumeroPlazaUnico(prefix);
+
+          // Validación defensiva explícita
+          if (typeof numeroPlaza !== 'string') {
+            logStepV3(
+              `❌ Generador devolvió un valor no string para numero_plaza`,
+              { etiqueta: 'PLAZA_CREATION', tipo: 'error' },
+              { numeroPlazaTipo: typeof numeroPlaza, numeroPlaza }
+            );
+
+            throw new Error('Generación de numero_plaza inválida (no es string)');
+          }
+
+          if (numeroPlaza.length > 5) {
+            logStepV3(
+              `❌ numero_plaza excede 5 caracteres: "${numeroPlaza}" (${numeroPlaza.length})`,
+              { etiqueta: 'PLAZA_CREATION', tipo: 'error' }
+            );
+            throw new Error(`numero_plaza inválido: longitud ${numeroPlaza.length} > 5`);
+          }
 
           logStepV3(`Intento ${attempts + 1}/${maxAttempts}: Creando plaza ${numeroPlaza}`, {
-            etiqueta: "PLAZA_CREATION",
-            tipo: "info"
+            etiqueta: 'PLAZA_CREATION',
+            tipo: 'info',
           });
 
           const response = await request(this.app.getHttpServer())
@@ -119,80 +146,80 @@ export class DataFixtures {
             plazas.push(response.body.data);
             success = true;
             logStepV3(`✅ Plaza creada exitosamente: ${numeroPlaza}`, {
-              etiqueta: "PLAZA_CREATION",
-              tipo: "info"
+              etiqueta: 'PLAZA_CREATION',
+              tipo: 'info',
             });
+            // this.createdPlazaIds.add(response.body.data.id);
           } else {
-            // Log de error no esperado
-            logStepV3(`❌ Error inesperado creando plaza: Status ${response.status}`, {
-              etiqueta: "PLAZA_CREATION",
-              tipo: "error"
-            }, response.body);
+            logStepV3(
+              `❌ Error inesperado creando plaza: Status ${response.status}`,
+              { etiqueta: 'PLAZA_CREATION', tipo: 'error' },
+              response.body
+            );
             attempts++;
           }
-          
         } catch (error: any) {
           attempts++;
           lastError = error;
-          
-          // Log detallado del error
-          logStepV3(`❌ Error en intento ${attempts}/${maxAttempts}: ${error.message}`, {
-            etiqueta: "PLAZA_CREATION",
-            tipo: "error"
-          }, error.response?.body || error);
-          
-          // Si es error de duplicado, reintentar con nuevo número
-          if (error.status === 422 || 
-              error.message.includes('duplicad') || 
-              error.message.includes('already exists') ||
-              error.response?.body?.message?.includes('duplicad')) {
-            
-            logStepV3(`🔄 Plaza duplicada, generando nuevo número...`, {
-              etiqueta: "PLAZA_CREATION",
-              tipo: "warning"
-            }, error.status, error.message);
-            
-            // Esperar antes de reintentar
-            await new Promise(resolve => setTimeout(resolve, 100 * attempts));
+
+          logStepV3(
+            `❌ Error en intento ${attempts}/${maxAttempts}: ${error.message}`,
+            { etiqueta: 'PLAZA_CREATION', tipo: 'error' },
+            error.response?.body || error
+          );
+
+          // duplicado
+          if (
+            error.status === 422 ||
+            error.message?.includes('duplicad') ||
+            error.message?.includes('already exists') ||
+            error.response?.body?.message?.includes('duplicad')
+          ) {
+            logStepV3(
+              `🔄 Plaza duplicada, generando nuevo número... status${error.status}`,
+              { etiqueta: 'PLAZA_CREATION', tipo: 'warning' },
+              error.message
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100 * attempts));
             continue;
           }
-          
-          // Si es error de conexión/timeout, reintentar
-          if (error.message.includes('ECONNRESET') || 
-              error.message.includes('timeout') || 
-              error.code === 'ECONNRESET') {
-            
-            logStepV3(`Error de conexión, reintentando...`, {
-              etiqueta: "PLAZA_CREATION",
-              tipo: "warning"
-            }, error.message);
-            
-            await new Promise(resolve => setTimeout(resolve, 200 * attempts));
+
+          // conexión
+          if (
+            error.message?.includes('ECONNRESET') ||
+            error.message?.includes('timeout') ||
+            error.code === 'ECONNRESET'
+          ) {
+            logStepV3(
+              `Error de conexión, reintentando...`,
+              { etiqueta: 'PLAZA_CREATION', tipo: 'warning' },
+              error.message
+            );
+            await new Promise((resolve) => setTimeout(resolve, 200 * attempts));
             continue;
           }
-          
-          // Para otros errores, esperar un poco y reintentar
-          await new Promise(resolve => setTimeout(resolve, 100 * attempts));
+
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempts));
         }
       }
-      
+
       if (!success) {
-        logStepV3(`💥 No se pudo crear plaza después de ${maxAttempts} intentos`, {
-          etiqueta: "PLAZA_CREATION",
-          tipo: "error"
-        }, lastError);
+        logStepV3(
+          `💥 No se pudo crear plaza después de ${maxAttempts} intentos`,
+          { etiqueta: 'PLAZA_CREATION', tipo: 'error' },
+          lastError
+        );
         throw new Error(`No se pudo crear plaza después de ${maxAttempts} intentos`);
       }
-      
-      // Pequeña pausa entre creación de plazas
+
       if (i < count - 1) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
 
-    logStepV3(`🅿Creadas ${plazas.length} plazas de parking`, { 
-      etiqueta: "PLAZA_CREATION",
-      tipo: 'info' 
+    logStepV3(`🅿Creadas ${plazas.length} plazas de parking`, {
+      etiqueta: 'PLAZA_CREATION',
+      tipo: 'info',
     });
     return plazas;
   }
@@ -207,7 +234,6 @@ export class DataFixtures {
         .set({ Authorization: `Bearer ${adminToken}` })
         .timeout(10000);
     } catch (error: any) {
-      // Si la reserva no existe (404), no hacemos nada
       if (error.status === 404) {
         return;
       }
@@ -215,45 +241,188 @@ export class DataFixtures {
     }
   }
 
+  // Agregar método de limpieza completa de base de datos
+  async cleanupDatabase(adminToken: string): Promise<void> {
+    logStepV3('Iniciando limpieza completa de base de datos...', {
+      etiqueta: 'DATABASE_CLEANUP',
+      tipo: 'info',
+    });
+
+    try {
+      // 1. Cancelar todas las reservas activas
+      const reservasResponse = await request(this.app.getHttpServer())
+        .get('/reservas/activas')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .timeout(30000);
+
+      if (reservasResponse.status === 200 && reservasResponse.body.data.length > 0) {
+        for (const reserva of reservasResponse.body.data) {
+          await this.cancelarReserva(adminToken, reserva.id);
+        }
+      }
+
+      // 2. Eliminar todos los vehículos de prueba
+      const vehiculosResponse = await request(this.app.getHttpServer())
+        .get('/vehiculos')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .query({ limit: 1000 })
+        .timeout(30000);
+
+      if (vehiculosResponse.status === 200 && vehiculosResponse.body.data.length > 0) {
+        for (const vehiculo of vehiculosResponse.body.data) {
+          if (vehiculo.placa.includes('TEST') || vehiculo.placa.includes('TMP')) {
+            await this.safeDeleteEntity('/vehiculos', vehiculo.id, adminToken, 'Vehículo');
+          }
+        }
+      }
+
+      // 3. Eliminar todas las plazas de prueba
+      const plazasResponse = await request(this.app.getHttpServer())
+        .get('/plazas')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .query({ limit: 1000 })
+        .timeout(30000);
+
+      if (plazasResponse.status === 200 && plazasResponse.body.data.length > 0) {
+        for (const plaza of plazasResponse.body.data) {
+          if (plaza.numero_plaza.startsWith('A') || plaza.numero_plaza.startsWith('B')) {
+            await this.safeDeleteEntity('/plazas', plaza.id.toString(), adminToken, 'Plaza');
+          }
+        }
+      }
+
+      logStepV3('Limpieza de base de datos completada', {
+        etiqueta: 'DATABASE_CLEANUP',
+        tipo: 'info',
+      });
+    } catch (error: any) {
+      logStepV3(
+        'Error durante limpieza de base de datos:',
+        { etiqueta: 'DATABASE_CLEANUP', tipo: 'error' },
+        error.message
+      );
+    }
+  }
+
+  /*
+   * Función de limpieza completa (cleanupAll)
+   */
+  async cleanupAll(adminToken: string) {
+    try {
+      const reservasResponse = await request(this.app.getHttpServer())
+        .get('/reservas')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      const todasLasReservas = reservasResponse.body?.data || reservasResponse.body || [];
+
+      if (!Array.isArray(todasLasReservas)) {
+        logStepV3(`Respuesta de reservas no es array, omitiendo cleanup de reservas`, {
+          etiqueta: 'CLEANUP_ALL',
+          tipo: 'warning',
+        });
+        return;
+      }
+
+      for (const reserva of todasLasReservas) {
+        try {
+          await request(this.app.getHttpServer())
+            .post(`/reservas/${reserva.id}/cancelar`)
+            .set('Authorization', `Bearer ${adminToken}`);
+        } catch (error: any) {
+          logStepV3(`Error cancelando reserva ${reserva.id}: ${error.message}`, {
+            etiqueta: 'CLEANUP_ALL',
+            tipo: 'warning',
+          });
+        }
+      }
+
+      const vehiculosResponse = await request(this.app.getHttpServer())
+        .get('/vehiculos')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      const todosLosVehiculos = vehiculosResponse.body?.data || vehiculosResponse.body || [];
+
+      if (Array.isArray(todosLosVehiculos)) {
+        for (const vehiculo of todosLosVehiculos) {
+          try {
+            await request(this.app.getHttpServer())
+              .delete(`/vehiculos/${vehiculo.id}`)
+              .set('Authorization', `Bearer ${adminToken}`);
+          } catch (error: any) {
+            logStepV3(`Error eliminando vehículo ${vehiculo.id}: ${error.message}`, {
+              etiqueta: 'CLEANUP_ALL',
+              tipo: 'warning',
+            });
+          }
+        }
+      }
+
+      const plazasResponse = await request(this.app.getHttpServer())
+        .get('/plazas')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      const todasLasPlazas = plazasResponse.body?.data || plazasResponse.body || [];
+
+      if (Array.isArray(todasLasPlazas)) {
+        for (const plaza of todasLasPlazas) {
+          try {
+            await request(this.app.getHttpServer())
+              .delete(`/plazas/${plaza.id}`)
+              .set('Authorization', `Bearer ${adminToken}`);
+          } catch (error: any) {
+            logStepV3(`Error eliminando plaza ${plaza.id}: ${error.message}`, {
+              etiqueta: 'CLEANUP_ALL',
+              tipo: 'warning',
+            });
+          }
+        }
+      }
+    } catch (error: any) {
+      logStepV3(`Error durante cleanupAll: ${error.message}`, {
+        etiqueta: 'CLEANUP_ALL',
+        tipo: 'error',
+      });
+    }
+  }
+
   /**
    * Limpieza completa y ordenada de datos de test
    * Maneja correctamente las dependencias entre entidades
    */
-async cleanupComplete(adminToken: string) {
-  logStepV3('Iniciando limpieza completa ordenada...', {
-    etiqueta: "HELPER",
-    tipo: "info"
-  });
-  
-  try {
-    // 1. Primero cancelar todas las reservas activas
-    await this.cleanupReservas(adminToken);
-    
-    // 2. Esperar a que se procesen las cancelaciones
-    await new Promise(resolve => setTimeout(resolve, 2000)); // ✅ AUMENTADO: Más tiempo
-    
-    // 3. Eliminar vehículos (ahora que no tienen reservas activas)
-    await this.cleanupVehiculos(adminToken);
-    
-    // 4. Esperar antes de eliminar plazas
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // 5. Finalmente eliminar plazas
-    await this.cleanupPlazas(adminToken);
-    
-    logStepV3('Limpieza completa finalizada exitosamente', {
-      etiqueta: "HELPER",
-      tipo: "info"
+  async cleanupComplete(adminToken: string) {
+    logStepV3('Iniciando limpieza completa ordenada...', {
+      etiqueta: 'HELPER',
+      tipo: 'info',
     });
-  } catch (error: any) {
-    logStepV3(`Error durante limpieza completa: ${error.message}`, {
-      etiqueta: "HELPER",
-      tipo: "error"
-    });
-    // ✅ NUEVO: No lanzar error, continuar con limpieza de emergencia
-    await this.emergencyCleanup(adminToken);
+
+    try {
+      // 1. Primero cancelar todas las reservas activas
+      await this.cleanupReservas(adminToken);
+
+      // 2. Esperar a que se procesen las cancelaciones
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // 3. Eliminar vehículos (ahora que no tienen reservas activas)
+      await this.cleanupVehiculos(adminToken);
+
+      // 4. Esperar antes de eliminar plazas
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // 5. Finalmente eliminar plazas
+      await this.cleanupPlazas(adminToken);
+
+      logStepV3('Limpieza completa finalizada exitosamente', {
+        etiqueta: 'HELPER',
+        tipo: 'info',
+      });
+    } catch (error: any) {
+      logStepV3(`Error durante limpieza completa: ${error.message}`, {
+        etiqueta: 'HELPER',
+        tipo: 'error',
+      });
+      await this.emergencyCleanup(adminToken);
+    }
   }
-}
 
   /**
    * Limpieza mejorada de plazas con mejor manejo de errores
@@ -261,34 +430,47 @@ async cleanupComplete(adminToken: string) {
   async cleanupPlazas(adminToken: string) {
     let deletedCount = 0;
     const plazaIds = Array.from(this.createdPlazaIds);
-    
+
     for (const plazaId of plazaIds) {
       try {
-        // Verificar si la plaza existe antes de intentar eliminarla
-        const response = await this.request.get(`/plazas/${plazaId}`)
+        const response = await this.request
+          .get(`/plazas/${plazaId}`)
           .set('Authorization', `Bearer ${adminToken}`);
-        
+
         if (response.status === 200) {
-          // Intentar eliminar la plaza
-          await this.request.delete(`/plazas/${plazaId}`)
+          await this.request
+            .delete(`/plazas/${plazaId}`)
             .set('Authorization', `Bearer ${adminToken}`);
-          
-          logStepV3(`Plaza ${plazaId} eliminada exitosamente`, {etiqueta: "Cleanup-Plazas"});
+
+          logStepV3(`Plaza ${plazaId} eliminada exitosamente`, { etiqueta: 'Cleanup-Plazas' });
           deletedCount++;
         }
-      } catch (error) {
+      } catch (error: any) {
         if (error.response?.status === 404) {
-          logStepV3(`Plaza ${plazaId} no existe, omitiendo eliminación`, {etiqueta:"Cleanup-Plazas"});
-        } else if (error.response?.status === 400 && 
-                  error.response?.body?.message?.includes('reservas activas')) {
-          logStepV3(`Plaza ${plazaId} tiene reservas activas, omitiendo eliminación`, {etiqueta:"Cleanup-Plazas", tipo:"warning"});
+          logStepV3(`Plaza ${plazaId} no existe, omitiendo eliminación`, {
+            etiqueta: 'Cleanup-Plazas',
+          });
+        } else if (
+          error.response?.status === 400 &&
+          error.response?.body?.message?.includes('reservas activas')
+        ) {
+          logStepV3(`Plaza ${plazaId} tiene reservas activas, omitiendo eliminación`, {
+            etiqueta: 'Cleanup-Plazas',
+            tipo: 'warning',
+          });
         } else {
-          logStepV3(`Error al eliminar plaza ${plazaId}: ${error.response?.body?.message || error.message}`, {etiqueta:"Cleanup-Plazas", tipo:"warning"});
+          logStepV3(
+            `Error al eliminar plaza ${plazaId}: ${error.response?.body?.message || error.message}`,
+            { etiqueta: 'Cleanup-Plazas', tipo: 'warning' }
+          );
         }
       }
     }
-    
-    logStepV3(`Eliminadas ${deletedCount} de ${plazaIds.length} plazas de prueba`, {etiqueta:"Cleanup-Plazas", tipo:"info"});
+
+    logStepV3(
+      `Eliminadas ${deletedCount} de ${plazaIds.length} plazas de prueba`,
+      { etiqueta: 'Cleanup-Plazas', tipo: 'info' }
+    );
     this.createdPlazaIds.clear();
   }
 
@@ -298,18 +480,27 @@ async cleanupComplete(adminToken: string) {
   async cleanupReservas(adminToken: string) {
     for (const reservaId of this.createdReservaIds) {
       try {
-        // Verificar si la reserva existe antes de intentar cancelarla
-        const response = await this.request.get(`/reservas/${reservaId}`).set('Authorization', `Bearer ${adminToken}`);
-        
+        const response = await this.request
+          .get(`/reservas/${reservaId}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
         if (response.status === 200) {
-          await this.request.post(`/reservas/${reservaId}/cancelar`).set('Authorization', `Bearer ${adminToken}`);
-          logStepV3(`Reserva ${reservaId} cancelada exitosamente`, {etiqueta: "Cleanup-Reserva"});
+          await this.request
+            .post(`/reservas/${reservaId}/cancelar`)
+            .set('Authorization', `Bearer ${adminToken}`);
+          logStepV3(`Reserva ${reservaId} cancelada exitosamente`, {
+            etiqueta: 'Cleanup-Reserva',
+          });
         }
-      } catch (error) {
+      } catch (error: any) {
         if (error.response?.status === 404) {
-          logStepV3(`Reserva ${reservaId} no existe, omitiendo cancelación`, {etiqueta: "Cleanup-Reserva"});
+          logStepV3(`Reserva ${reservaId} no existe, omitiendo cancelación`, {
+            etiqueta: 'Cleanup-Reserva',
+          });
         } else {
-          logStepV3(`Error al cancelar reserva ${reservaId}: ${error.message}`, {etiqueta: "CLeanup-Reserva"});
+          logStepV3(`Error al cancelar reserva ${reservaId}: ${error.message}`, {
+            etiqueta: 'CLeanup-Reserva',
+          });
         }
       }
     }
@@ -322,51 +513,102 @@ async cleanupComplete(adminToken: string) {
   async cleanupVehiculos(adminToken: string) {
     let deletedCount = 0;
     const vehiculoIds = Array.from(this.createdVehiculoIds);
-    
+
     for (const vehiculoId of vehiculoIds) {
       try {
-        // Verificar si el vehículo existe antes de intentar eliminarlo
-        const response = await this.request.get(`/vehiculos/${vehiculoId}`)
+        const response = await this.request
+          .get(`/vehiculos/${vehiculoId}`)
           .set('Authorization', `Bearer ${adminToken}`);
-        
+
         if (response.status === 200) {
-          // Intentar eliminar el vehículo
-          await this.request.delete(`/vehiculos/${vehiculoId}`)
+          await this.request
+            .delete(`/vehiculos/${vehiculoId}`)
             .set('Authorization', `Bearer ${adminToken}`);
-          
-          logStepV3(`Vehículo ${vehiculoId} eliminado exitosamente`, {etiqueta: "Cleanup-Vehiculos"});
+
+          logStepV3(`Vehículo ${vehiculoId} eliminado exitosamente`, {
+            etiqueta: 'Cleanup-Vehiculos',
+          });
           deletedCount++;
         }
-      } catch (error) {
+      } catch (error: any) {
         if (error.response?.status === 404) {
-          logStepV3(`Vehículo ${vehiculoId} no existe, omitiendo eliminación`, {etiqueta: "Cleanup-Vehiculos"});
-        } else if (error.response?.status === 400 && 
-                  error.response?.body?.message?.includes('reservas activas')) {
-          logStepV3(`Vehículo ${vehiculoId} tiene reservas activas, omitiendo eliminación`, {tipo:'warning', etiqueta:"CLeanup-Vehiculos"});
+          logStepV3(`Vehículo ${vehiculoId} no existe, omitiendo eliminación`, {
+            etiqueta: 'Cleanup-Vehiculos',
+          });
+        } else if (
+          error.response?.status === 400 &&
+          error.response?.body?.message?.includes('reservas activas')
+        ) {
+          logStepV3(`Vehículo ${vehiculoId} tiene reservas activas, omitiendo eliminación`, {
+            tipo: 'warning',
+            etiqueta: 'CLeanup-Vehiculos',
+          });
         } else {
-          logStepV3(`Error al eliminar vehículo ${vehiculoId}: ${error.response?.body?.message || error.message}`, {tipo:'warning', etiqueta:"CLeanup-Vehiculos"});
+          logStepV3(
+            `Error al eliminar vehículo ${vehiculoId}: ${error.response?.body?.message || error.message}`,
+            { tipo: 'warning', etiqueta: 'CLeanup-Vehiculos' }
+          );
         }
       }
     }
-    
-    logStepV3(`Eliminados ${deletedCount} de ${vehiculoIds.length} vehículos de prueba`, {
-      etiqueta:"CLeanup-Vehiculos",
-      tipo: "info"
-    });
+
+    logStepV3(
+      `Eliminados ${deletedCount} de ${vehiculoIds.length} vehículos de prueba`,
+      {
+        etiqueta: 'CLeanup-Vehiculos',
+        tipo: 'info',
+      }
+    );
     this.createdVehiculoIds.clear();
   }
 
   /**
+   * NUEVO: Genera un candidato de placa con formato ABC123
+   * Longitud <= 10, caracteres alfanuméricos.
+   */
+  private generateRandomPlacaCandidate(): string {
+    const randLetter = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    const letters = `${randLetter()}${randLetter()}${randLetter()}`;
+    const digits = Math.floor(100 + Math.random() * 900).toString();
+    return `${letters}${digits}`; // p.e. ABC123
+  }
+
+  /**
+   * NUEVO: Genera una placa válida única con límite de intentos.
+   * Usa un Set estático para evitar colisiones entre tests.
+   */
+  public generateValidPlaca(): string {
+    const MAX_ATTEMPTS = 50;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const candidate = this.generateRandomPlacaCandidate();
+      if (
+        candidate.length <= 10 &&
+        /^[A-Z0-9]+$/.test(candidate) &&
+        !DataFixtures.generatedPlacas.has(candidate)
+      ) {
+        DataFixtures.generatedPlacas.add(candidate);
+        return candidate;
+      }
+    }
+    const errMsg = `No se pudo generar placa única tras ${MAX_ATTEMPTS} intentos`;
+    logStepV3(errMsg, { etiqueta: 'DATA_FIXTURES', tipo: 'error' });
+    throw new Error(errMsg);
+  }
+
+  /**
    * Crea un vehículo para un usuario
+   * EDITADO: por defecto usa generateValidPlaca() para minimizar colisiones;
+   * sigue permitiendo override y mantiene validaciones.
    */
   async createVehiculo(
     clienteId: string,
     clienteToken: string,
     options: VehiculoOptions = {}
   ): Promise<any> {
-    
+    const placaGenerada = options.placa ?? this.generateValidPlaca();
+
     const vehiculoData = {
-      placa: options.placa || this.generateUniquePlaca('TST'),
+      placa: placaGenerada,
       marca: options.marca || this.getRandomMarca(),
       modelo: options.modelo || this.getRandomModelo(),
       color: options.color || this.getRandomColor(),
@@ -377,15 +619,17 @@ async cleanupComplete(adminToken: string) {
     if (!vehiculoData.placa) {
       throw new Error('Placa es requerida para crear vehículo');
     }
-    
+
     if (vehiculoData.placa.length > 10) {
-      logStepV3(`❌ Placa excede límite: "${vehiculoData.placa}" (${vehiculoData.placa.length} chars)`, {
-        etiqueta: "VEHICULO_VALIDATION",
-        tipo: "error"
-      });
-      throw new Error(`Placa inválida: "${vehiculoData.placa}" excede 10 caracteres (actual: ${vehiculoData.placa.length})`);
+      logStepV3(
+        `❌ Placa excede límite: "${vehiculoData.placa}" (${vehiculoData.placa.length} chars)`,
+        { etiqueta: 'VEHICULO_VALIDATION', tipo: 'error' }
+      );
+      throw new Error(
+        `Placa inválida: "${vehiculoData.placa}" excede 10 caracteres (actual: ${vehiculoData.placa.length})`
+      );
     }
-    
+
     // ✅ VALIDACIÓN DE FORMATO: solo alfanuméricos
     if (!/^[A-Z0-9]+$/.test(vehiculoData.placa)) {
       throw new Error(`Placa inválida: "${vehiculoData.placa}" contiene caracteres no válidos`);
@@ -395,10 +639,10 @@ async cleanupComplete(adminToken: string) {
       throw new Error('clienteId y clienteToken son requeridos');
     }
 
-    logStepV3(`🚗 Creando vehículo con placa: "${vehiculoData.placa}" (${vehiculoData.placa.length} chars)`, {
-      etiqueta: "VEHICULO_CREATE",
-      tipo: "info"
-    });
+    logStepV3(
+      `🚗 Creando vehículo con placa: "${vehiculoData.placa}" (${vehiculoData.placa.length} chars)`,
+      { etiqueta: 'VEHICULO_CREATE', tipo: 'info' }
+    );
 
     try {
       const response = await request(this.app.getHttpServer())
@@ -413,22 +657,23 @@ async cleanupComplete(adminToken: string) {
         this.createdVehiculoIds.add(response.body.data.id);
       }
 
-      logStepV3(`✅ Vehículo creado: ${vehiculoData.placa} (${vehiculoData.marca} ${vehiculoData.modelo})`, {
-        etiqueta: "HELPER", 
-        tipo: "info"
-      });
-      
+      logStepV3(
+        `✅ Vehículo creado: ${vehiculoData.placa} (${vehiculoData.marca} ${vehiculoData.modelo})`,
+        { etiqueta: 'HELPER', tipo: 'info' }
+      );
+
       return response.body.data;
     } catch (error: any) {
-      logStepV3(`❌ Error creando vehículo con placa ${vehiculoData.placa}:`, {
-        etiqueta: "HELPER", 
-        tipo: "error"
-      }, {
-        status: error.status,
-        message: error.message,
-        body: error.response?.body,
-        vehiculoData
-      });
+      logStepV3(
+        `❌ Error creando vehículo con placa ${vehiculoData.placa}:`,
+        { etiqueta: 'HELPER', tipo: 'error' },
+        {
+          status: error.status,
+          message: error.message,
+          body: error.response?.body,
+          vehiculoData,
+        }
+      );
       throw error;
     }
   }
@@ -442,10 +687,10 @@ async cleanupComplete(adminToken: string) {
     count: number = 3
   ): Promise<any[]> {
     const vehiculos: any[] = [];
-    
+
     for (let i = 0; i < count; i++) {
       const vehiculo = await this.createVehiculo(clienteId, clienteToken, {
-        placa: `MLT${(i + 1).toString().padStart(3, '0')}`,
+        placa: this.generateUniquePlaca('MLT'),
       });
       vehiculos.push(vehiculo);
     }
@@ -481,7 +726,7 @@ async cleanupComplete(adminToken: string) {
 
     logStepV3(
       `Reserva creada: plaza ${reservaData.plaza.numero_plaza} (id=${reservaData.plaza.id})`,
-      { tipo: 'info' },
+      { tipo: 'info' }
     );
 
     return response.body.data;
@@ -498,7 +743,7 @@ async cleanupComplete(adminToken: string) {
     count: number = 3
   ): Promise<any[]> {
     const reservas: any[] = [];
-    
+
     for (let i = 0; i < Math.min(count, plazas.length); i++) {
       const fechaInicio = new Date();
       fechaInicio.setHours(fechaInicio.getHours() + (i + 1) * 2); // Espaciar las reservas
@@ -515,9 +760,8 @@ async cleanupComplete(adminToken: string) {
       });
 
       reservas.push(reserva);
-      
-      // Pequeña pausa para evitar conflictos de concurrencia
-      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     return reservas;
@@ -534,12 +778,14 @@ async cleanupComplete(adminToken: string) {
     days: number = 7
   ): Promise<any[]> {
     const reservas: any[] = [];
-    
+
     for (let i = 0; i < Math.min(days, plazas.length); i++) {
       const diasAtras = days - i;
       const ahora = new Date();
-      const inicio = new Date(ahora.getTime() - (diasAtras * 24 * 60 * 60 * 1000) - (2 * 60 * 60 * 1000));
-      const fin = new Date(inicio.getTime() + (60 * 60 * 1000)); // 1 hora de duración
+      const inicio = new Date(
+        ahora.getTime() - diasAtras * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000
+      );
+      const fin = new Date(inicio.getTime() + 60 * 60 * 1000); // 1 hora de duración
 
       const reservaData = {
         usuario_id: userId,
@@ -575,19 +821,17 @@ async cleanupComplete(adminToken: string) {
 
     for (let i = 0; i < plazasAOcupar && i < clientesData.length; i++) {
       const cliente = clientesData[i % clientesData.length];
-      
-      // Calcular fechas
+
       const fechaInicio = new Date();
-      fechaInicio.setMinutes(fechaInicio.getMinutes() + 0.1 * 60); // 0.1 horas = 6 minutos
+      fechaInicio.setMinutes(fechaInicio.getMinutes() + 0.1 * 60);
 
       const duracionHoras = 2 + Math.floor(Math.random() * 3);
       const fechaFin = new Date(fechaInicio);
       fechaFin.setHours(fechaFin.getHours() + duracionHoras);
 
-      // Crear reserva
       const reserva = await this.createReserva(cliente.token, {
         usuario_id: cliente.userId,
-        plaza: plazas[i],         // pasar objeto completo
+        plaza: plazas[i],
         vehiculo_id: cliente.vehiculoId,
         fecha_inicio: fechaInicio,
         fecha_fin: fechaFin,
@@ -596,7 +840,9 @@ async cleanupComplete(adminToken: string) {
       reservas.push(reserva);
     }
 
-    logStepV3(`📊 Simulada ocupación del ${(occupancyPercentage * 100).toFixed(0)}%: ${reservas.length}/${plazas.length} plazas ocupadas`);
+    logStepV3(
+      `📊 Simulada ocupación del ${(occupancyPercentage * 100).toFixed(0)}%: ${reservas.length}/${plazas.length} plazas ocupadas`
+    );
     return reservas;
   }
 
@@ -605,7 +851,13 @@ async cleanupComplete(adminToken: string) {
    */
   async createCompleteScenario(adminToken: string): Promise<{
     plazas: any[];
-    clientes: Array<{ userId: string; vehiculoId: string; token: string; user: any; vehiculo: any }>;
+    clientes: Array<{
+      userId: string;
+      vehiculoId: string;
+      token: string;
+      user: any;
+      vehiculo: any;
+    }>;
     reservasActivas: any[];
     reservasPasadas: any[];
   }> {
@@ -640,18 +892,16 @@ async cleanupComplete(adminToken: string) {
     // Crear reservas activas
     const reservasActivas: any[] = [];
     for (let i = 0; i < 3; i++) {
-      // Calcular fechas de ejemplo
-      const fechaInicio = new Date();  
-      fechaInicio.setMinutes(fechaInicio.getMinutes() + i * 10); // Diferenciar inicio por cada reserva
+      const fechaInicio = new Date();
+      fechaInicio.setMinutes(fechaInicio.getMinutes() + i * 10);
 
-      const duracionHoras = 2; // o cualquier valor dinámico que necesites
+      const duracionHoras = 2;
       const fechaFin = new Date(fechaInicio);
       fechaFin.setHours(fechaFin.getHours() + duracionHoras);
 
-      // Llamada correcta a createReserva
       const reserva = await this.createReserva(clientes[i].token, {
         usuario_id: clientes[i].userId,
-        plaza: plazas[i],         // pasar objeto completo
+        plaza: plazas[i],
         vehiculo_id: clientes[i].vehiculoId,
         fecha_inicio: fechaInicio,
         fecha_fin: fechaFin,
@@ -659,7 +909,6 @@ async cleanupComplete(adminToken: string) {
 
       reservasActivas.push(reserva);
     }
-
 
     // Crear reservas pasadas
     const reservasPasadas = await this.createPastReservas(
@@ -701,64 +950,63 @@ async cleanupComplete(adminToken: string) {
    */
   generateUniquePlaca(prefix: string = 'TMP'): string {
     let intentos = 0;
-    const maxIntentos = 15; // ✅ AUMENTADO para más oportunidades
-    
+    const maxIntentos = 15;
+
     while (intentos < maxIntentos) {
       DataFixtures.placaCounter++;
-      
-      // ✅ FORMATO OPTIMIZADO para máximo 10 caracteres
-      // PREFIX: máximo 2 caracteres
+
       const shortPrefix = prefix.substring(0, 2).toUpperCase();
-      
-      // COUNTER: 2 dígitos (00-99, luego reinicia)
       const counter = (DataFixtures.placaCounter % 100).toString().padStart(2, '0');
-      
-      // TIMESTAMP: 3 caracteres (últimos 3 de base36)
       const timestamp = Date.now().toString(36).slice(-3).toUpperCase();
-      
-      // RANDOM: 3 caracteres
       const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-      
-      // ✅ CONSTRUCCIÓN: 2 + 2 + 3 + 3 = 10 caracteres máximo
+
       const placa = `${shortPrefix}${counter}${timestamp}${random}`;
-      
-      // ✅ VALIDACIÓN DE LONGITUD antes de verificar unicidad
+
       if (placa.length > 10) {
         logStepV3(`⚠️ Placa generada excede 10 chars: ${placa} (${placa.length})`, {
-          etiqueta: "PLACA_GEN",
-          tipo: "warning"
+          etiqueta: 'PLACA_GEN',
+          tipo: 'warning',
         });
         intentos++;
         continue;
       }
-      
-      // Verificar unicidad
+
       if (!DataFixtures.generatedPlacas.has(placa)) {
         DataFixtures.generatedPlacas.add(placa);
-        
+
         logStepV3(`✅ Placa generada: ${placa} (${placa.length} chars)`, {
-          etiqueta: "PLACA_GEN",
-          tipo: "info"
+          etiqueta: 'PLACA_GEN',
+          tipo: 'info',
         });
-        
+
         return placa;
       }
-      
+
       intentos++;
     }
-    
-    // ✅ FALLBACK: Si no se puede generar única, usar timestamp simple
-    const fallbackPlaca = `${prefix.substring(0, 2)}${Date.now().toString().slice(-6)}`.substring(0, 10);
-    
+
+    const fallbackPlaca = `${prefix.substring(0, 2)}${Date.now().toString().slice(-6)}`.substring(
+      0,
+      10
+    );
+
     logStepV3(`⚡ Usando placa fallback: ${fallbackPlaca}`, {
-      etiqueta: "PLACA_GEN",
-      tipo: "warning"
+      etiqueta: 'PLACA_GEN',
+      tipo: 'warning',
     });
-    
+
     return fallbackPlaca;
   }
 
-  async waitForPlazaState(app: INestApplication, plazaId: number, estadoEsperado: EstadoPlaza, authHelper: AuthHelper, usuarios: any, intentosMax = 10, delayMs = 100) {
+  async waitForPlazaState(
+    app: INestApplication,
+    plazaId: number,
+    estadoEsperado: EstadoPlaza,
+    authHelper: AuthHelper,
+    usuarios: any,
+    intentosMax = 10,
+    delayMs = 100
+  ) {
     let intentos = 0;
     while (intentos < intentosMax) {
       const response = await request(app.getHttpServer())
@@ -767,12 +1015,14 @@ async cleanupComplete(adminToken: string) {
       if (response.body.data.estado === estadoEsperado) {
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
       intentos++;
     }
-    throw new Error(`La plaza no alcanzó el estado ${estadoEsperado} después de ${intentosMax} intentos`);
+    throw new Error(
+      `La plaza no alcanzó el estado ${estadoEsperado} después de ${intentosMax} intentos`
+    );
   }
-  
+
   // Helpers para datos aleatorios
   private getRandomMarca(): string {
     const marcas = ['Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'BMW', 'Mercedes', 'Audi'];
@@ -790,29 +1040,34 @@ async cleanupComplete(adminToken: string) {
   }
 
   /**
-  * Generador de numero de plaza
-  */
-  private generarNumeroPlazaUnico(prefix: string): string {
-    // Asegurar que el prefijo no exceda 1 carácter para dejar espacio para 4 dígitos
-    const shortPrefix = prefix.substring(0, 1);
-    
-    // Generar un número aleatorio de 4 dígitos
-    const randomNumber = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    
-    // Combinar prefijo (1 char) + número (4 chars) = total 5 caracteres
-    const numeroPlaza = `${shortPrefix}${randomNumber}`;
-    
-    // Verificar que no se haya generado recientemente
-    if (DataFixtures.generatedPlazaNumbers.has(numeroPlaza)) {
-      // Si ya existe, generar uno nuevo
-      return this.generarNumeroPlazaUnico(prefix);
+   * Generador de numero de plaza
+   */
+  private async generarNumeroPlazaUnico(prefix: string): Promise<string> {
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (attempts < maxAttempts) {
+      const timestamp = Date.now().toString().slice(-4);
+      const random = Math.floor(Math.random() * 99)
+        .toString()
+        .padStart(2, '0');
+
+      const numeroPlaza = `${prefix}${timestamp.slice(-3)}${random}`.substring(0, 5);
+
+      if (!DataFixtures.generatedPlazaNumbers.has(numeroPlaza)) {
+        DataFixtures.generatedPlazaNumbers.add(numeroPlaza);
+        return numeroPlaza;
+      }
+
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    
-    DataFixtures.generatedPlazaNumbers.add(numeroPlaza);
-    return numeroPlaza;
+
+    const fallback = `${prefix}${Math.random().toString(36).substring(2, 4)}`.substring(0, 5);
+    return String(fallback).substring(0, 5);
   }
 
-  // Agregar este método para verificar existencia antes de eliminar
+  // Verificar existencia antes de eliminar
   private async safeDeleteEntity(
     endpoint: string,
     id: string,
@@ -820,7 +1075,6 @@ async cleanupComplete(adminToken: string) {
     entityName: string
   ): Promise<boolean> {
     try {
-      // Primero verificar si existe
       const getResponse = await request(this.app.getHttpServer())
         .get(`${endpoint}/${id}`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -829,33 +1083,31 @@ async cleanupComplete(adminToken: string) {
 
       if (getResponse.status !== 200) {
         logStepV3(`${entityName} ${id} no existe, omitiendo eliminación`, {
-          etiqueta: "HELPER", 
-          tipo: "info"
+          etiqueta: 'HELPER',
+          tipo: 'info',
         });
         return false;
       }
 
-      // Si existe, intentar eliminar
       const deleteResponse = await request(this.app.getHttpServer())
         .delete(`${endpoint}/${id}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .timeout(10000);
 
       if (deleteResponse.status === 200 || deleteResponse.status === 204) {
-        logStepV3(`${entityName} ${id} eliminado`, {etiqueta: "HELPER"});
+        logStepV3(`${entityName} ${id} eliminado`, { etiqueta: 'HELPER' });
         return true;
       }
 
       return false;
-      
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage = error.message || '';
-      if (!errorMessage.includes('404') && 
-          !errorMessage.includes('not found')) {
-        logStepV3(`Error eliminando ${entityName} ${id}:`, {
-          etiqueta: "HELPER", 
-          tipo: "warning"
-        }, errorMessage);
+      if (!errorMessage.includes('404') && !errorMessage.includes('not found')) {
+        logStepV3(
+          `Error eliminando ${entityName} ${id}:`,
+          { etiqueta: 'HELPER', tipo: 'warning' },
+          errorMessage
+        );
       }
       return false;
     }
@@ -868,7 +1120,6 @@ async cleanupComplete(adminToken: string) {
    */
   private async limpiarReservasDePlaza(adminToken: string, plazaId: number): Promise<void> {
     try {
-      // Obtener todas las reservas de la plaza
       const reservasResponse = await request(this.app.getHttpServer())
         .get(`/reservas?plaza_id=${plazaId}`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -883,39 +1134,39 @@ async cleanupComplete(adminToken: string) {
                 .set('Authorization', `Bearer ${adminToken}`)
                 .timeout(5000);
             }
-          } catch (error) {
-            // Ignorar errores de cancelación
-            logStepV3(`Ignorar errores de cancelación:`,  {etiqueta: "HELPER", tipo:"error"}, error.message);
+          } catch (error: any) {
+            logStepV3(`Ignorar errores de cancelación:`, { etiqueta: 'HELPER', tipo: 'error' }, error.message);
           }
         }
       }
-    } catch (error) {
-      logStepV3(`Error al limpiar reservas para plaza ${plazaId}:`,  {etiqueta: "HELPER", tipo:"warning"},error.message);
+    } catch (error: any) {
+      logStepV3(
+        `Error al limpiar reservas para plaza ${plazaId}:`,
+        { etiqueta: 'HELPER', tipo: 'warning' },
+        error.message
+      );
     }
   }
 
-/**
- * ✅ NUEVO: Método de limpieza de emergencia
- */
-private async emergencyCleanup(adminToken: string) {
-  logStepV3('Iniciando limpieza de emergencia...', {
-    etiqueta: "EMERGENCY",
-    tipo: "warning"
-  });
+  /**
+   * ✅ NUEVO: Método de limpieza de emergencia
+   */
+  private async emergencyCleanup(adminToken: string) {
+    logStepV3('Iniciando limpieza de emergencia...', {
+      etiqueta: 'EMERGENCY',
+      tipo: 'warning',
+    });
 
-  // Limpiar Sets de tracking
-  this.createdReservaIds.clear();
-  this.createdVehiculoIds.clear();
-  this.createdPlazaIds.clear();
-  
-  // Limpiar Sets estáticos
-  DataFixtures.generatedPlazaNumbers.clear();
-  DataFixtures.generatedPlacas.clear();
-  
-  logStepV3('Limpieza de emergencia completada', {
-    etiqueta: "EMERGENCY",
-    tipo: "info"
-  });
-}
+    this.createdReservaIds.clear();
+    this.createdVehiculoIds.clear();
+    this.createdPlazaIds.clear();
 
+    DataFixtures.generatedPlazaNumbers.clear();
+    DataFixtures.generatedPlacas.clear();
+
+    logStepV3('Limpieza de emergencia completada', {
+      etiqueta: 'EMERGENCY',
+      tipo: 'info',
+    });
+  }
 }

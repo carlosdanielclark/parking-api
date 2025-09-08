@@ -787,7 +787,10 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
         fecha_inicio: dataFixtures.generateFutureDate(1),
         fecha_fin: dataFixtures.generateFutureDate(4),
       };
-      logStepV3('Intentando crear reserva sin autenticación', { etiqueta: 'AUTH' }, reservaData.usuario_id, reservaData.vehiculo_id);
+      logStepV3('Intentando crear reserva sin autenticación', 
+        { etiqueta: 'AUTH' }, 
+        `usuario_id: ${reservaData.usuario_id}
+        vehiculo_id: ${reservaData.vehiculo_id}`);
       const response = await request(app.getHttpServer())
         .post('/reservas')
         .send(reservaData)
