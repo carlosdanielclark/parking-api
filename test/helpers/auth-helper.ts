@@ -16,7 +16,6 @@ export interface AuthenticatedUser {
 }
 
 export class AuthHelper {
-  // NUEVO: instancia de DataFixtures para delegar creación de vehículos
   private dataFixtures: DataFixtures;
 
   constructor(private app: INestApplication) {
@@ -24,25 +23,51 @@ export class AuthHelper {
   }
 
   /**
+   * NUEVO - doLoginWithRetry
+   * Realiza POST /auth/login con reintentos focalizados en ECONNRESET.
+   * Devuelve el objeto response de supertest (para extraer tokens, etc.).
+   */
+  private async doLoginWithRetry(
+    payload: { email: string; password: string },
+    maxRetries = 2,
+    delayMs = 150
+  ): Promise<request.Response> {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await request(this.app.getHttpServer())
+          .post('/auth/login')
+          .send(payload)
+          .timeout(15000)
+          .expect(200);
+      } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        logStepV3(`doLoginWithRetry intento ${attempt + 1}/${maxRetries} -> ${msg}`, {
+          etiqueta: 'AUTH_HELPER',
+          tipo: 'warning',
+        });
+        if (attempt < maxRetries && /ECONNRESET/i.test(msg)) {
+          attempt++;
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /**
    * Crear un cliente con un vehículo asociado
-   * Útil para tests que requieren un cliente con vehículo.
    * EDITADO: delega la creación de vehículo a DataFixtures.createVehiculo
    */
   async createClienteWithVehiculo(): Promise<{
     cliente: AuthenticatedUser;
     vehiculo: any;
   }> {
-    // 1) Crear cliente y obtener token
     const cliente = await this.createAndLoginUser(UserRole.CLIENTE);
 
-    // 2) Crear vehículo delegando al helper centralizado
     try {
-      const vehiculo = await this.dataFixtures.createVehiculo(
-        cliente.user.id,
-        cliente.token,
-        {}
-      );
-
+      const vehiculo = await this.dataFixtures.createVehiculo(cliente.user.id, cliente.token, {});
       return { cliente, vehiculo };
     } catch (error: any) {
       const serverBody = error?.response?.body ?? error?.response ?? error?.message;
@@ -94,16 +119,12 @@ export class AuthHelper {
         .timeout(15000)
         .expect(200);
 
-      // Re-login
-      userResponse = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: userData.email,
-          password: userData.password,
-        })
-        .timeout(15000)
-        .expect(200);
-      
+      // Re-login -> usar doLoginWithRetry para mayor resiliencia
+      userResponse = await this.doLoginWithRetry({
+        email: userData.email,
+        password: userData.password,
+      });
+
       return {
         user: userResponse.body.data.user,
         token: userResponse.body.data.access_token,
@@ -113,7 +134,7 @@ export class AuthHelper {
     return {
       user: registerResponse.body.data.user,
       token: registerResponse.body.data.access_token,
-    }
+    };
   }
 
   /**
@@ -146,95 +167,63 @@ export class AuthHelper {
 
   /**
    * Obtener token del administrador predeterminado del sistema
-   * Mejorado con reintentos y mejor manejo de errores
+   * (Tu versión ya implementaba retries; la mantengo)
    */
-async getAdminToken(maxRetries = 5): Promise<string> {
-  let attempts = 0;
-  const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+  async getAdminToken(maxRetries = 5): Promise<string> {
+    let attempts = 0;
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  while (attempts < maxRetries) {
-  try {
-  const res = await request(this.app.getHttpServer())
-  .post('/auth/login')
-  .send({ email: 'admin@parking.com', password: 'admin123' })
-  .timeout(15000)
-  .expect((r) => {
-  if (r.status !== 200) throw new Error(`Login admin status=${r.status}`);
-  });
+    while (attempts < maxRetries) {
+      try {
+        const res = await request(this.app.getHttpServer())
+          .post('/auth/login')
+          .send({ email: 'admin@parking.com', password: 'admin123' })
+          .timeout(15000)
+          .expect((r) => {
+            if (r.status !== 200) throw new Error(`Login admin status=${r.status}`);
+          });
 
-    const token = res.body.data?.access_token || res.body.access_token || res.body.data?.token;
-    if (!token) throw new Error('Token no encontrado en respuesta de login admin');
-    return token;
-  } catch (err: any) {
-    attempts++;
-    logStepV3(`Reintento getAdminToken ${attempts}/${maxRetries}: ${err.message}`, {
-      etiqueta: 'AUTH_HELPER',
-      tipo: 'warning',
-    });
-    if (attempts >= maxRetries) {
-      throw new Error(`No se obtuvo token admin tras ${maxRetries} intentos: ${err.message}`);
+        const token =
+          res.body.data?.access_token || res.body.access_token || res.body.data?.token;
+        if (!token) throw new Error('Token no encontrado en respuesta de login admin');
+        return token;
+      } catch (err: any) {
+        attempts++;
+        logStepV3(`Reintento getAdminToken ${attempts}/${maxRetries}: ${err.message}`, {
+          etiqueta: 'AUTH_HELPER',
+          tipo: 'warning',
+        });
+        if (attempts >= maxRetries) {
+          throw new Error(`No se obtuvo token admin tras ${maxRetries} intentos: ${err.message}`);
+        }
+        await delay(1000);
+      }
     }
-    await delay(1000);
-  }
-  }
-  throw new Error('Flujo inesperado getAdminToken');
-}
-
-
-
-  /**
-   * Validar que un token funciona correctamente
-   */
-  async validateToken(token: string): Promise<boolean> {
-    try {
-      const response = await request(this.app.getHttpServer())
-        .get('/auth/profile')
-        .set(this.getAuthHeader(token))
-        .timeout(5000)
-        .expect(200);
-
-      return response.body.success === true;
-    } catch {
-      return false;
-    }
+    throw new Error('Flujo inesperado getAdminToken');
   }
 
   /**
-   * Obtener token del empleado predeterminado del sistema
+   * EDITADO - Ahora login usa doLoginWithRetry internamente
+   */
+  async login(email: string, password: string): Promise<string> {
+    const res = await this.doLoginWithRetry({ email, password }, 2, 150);
+    return res.body.data.access_token;
+  }
+
+  /**
+   * EDITADO - getEmpleadoToken usa doLoginWithRetry para evitar ECONNRESET intermitente
    */
   async getEmpleadoToken(): Promise<string> {
-    try {
-      const response = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: 'empleado@parking.com',
-          password: 'empleado123',
-        })
-        .expect(200);
-
-      return response.body.data.access_token;
-    } catch (error: any) {
-      throw new Error(`No se pudo obtener token de empleado: ${error.message}`);
-    }
+    const res = await this.doLoginWithRetry({ email: 'empleado@parking.com', password: 'empleado123' }, 2, 150);
+    return res.body.data.access_token;
   }
 
   /**
-   * Obtener token del cliente predeterminado del sistema
+   * EDITADO - getClienteToken usa doLoginWithRetry para evitar ECONNRESET intermitente
    */
   async getClienteToken(): Promise<string> {
-    try {
-      const response = await request(this.app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: 'cliente@parking.com',
-          password: 'cliente123',
-        })
-        .expect(200);
-
-      return response.body.data.access_token;
-    } catch (error: any) {
-      throw new Error(`No se pudo obtener token de cliente: ${error.message}`);
-    }
+    const res = await this.doLoginWithRetry({ email: 'cliente@parking.com', password: 'cliente123' }, 2, 150);
+    return res.body.data.access_token;
   }
 
   /**
@@ -242,18 +231,6 @@ async getAdminToken(maxRetries = 5): Promise<string> {
    */
   getAuthHeader(token: string): { Authorization: string } {
     return { Authorization: `Bearer ${token}` };
-  }
-
-  /**
-   * Hacer login con credenciales específicas
-   */
-  async login(email: string, password: string): Promise<string> {
-    const response = await request(this.app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
-      .expect(200);
-
-    return response.body.data.access_token;
   }
 
   /**
@@ -301,9 +278,6 @@ async getAdminToken(maxRetries = 5): Promise<string> {
 
   // MÉTODOS PRIVADOS
 
-  /**
-   * Obtener contraseña por defecto según el rol
-   */
   private getDefaultPassword(role: UserRole): string {
     const passwords = {
       [UserRole.ADMIN]: 'admin123',
@@ -314,19 +288,13 @@ async getAdminToken(maxRetries = 5): Promise<string> {
     return passwords[role] || 'default123';
   }
 
-  /**
-   * Generar email único para tests
-   */
   private generateUniqueEmail(role: UserRole): string {
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substring(7);
     return `test-${role.toLowerCase()}-${timestamp}-${randomSuffix}@test.com`;
   }
 
-  /**
-   * OBSOLETO: Generar placa válida.
-   * Mantenido por compatibilidad; la creación de vehículos ahora delega a DataFixtures.
-   */
+  // OBSOLETO: kept for compatibility
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private generateValidPlaca(): string {
     const timestamp = Date.now().toString().slice(-6);

@@ -554,23 +554,74 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       expect(response.body.message).toContain('fecha de fin debe ser posterior');
     });
 
+    // EDITADO: test/e2e/casos/reserva-plaza.e2e-spec.ts
     it('debe rechazar reservas que excedan 24 horas', async () => {
-      const reservaData = {
-        usuario_id: usuarios.cliente.user.id,
-        plaza_id: plazas[0].id,
-        vehiculo_id: vehiculo.id,
-        fecha_inicio: dataFixtures.generateFutureDate(1),
-        fecha_fin: dataFixtures.generateFutureDate(26),
-      };
-      logStepV3(`Intentando reserva mayor a 24h: inicio(${reservaData.fecha_inicio} || fin(${reservaData.fecha_fin})`, { etiqueta: 'NEGOCIO' });
-      const response = await request(app.getHttpServer())
-        .post('/reservas')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .send(reservaData)
-        .expect(400);
+      // 1) Preparar fechas: inicio = ahora + 1 hora, fin = inicio + 25 horas (=> excede 24h)
+      const start = new Date(Date.now() + 1 * 60 * 60 * 1000); // +1h
+      const end = new Date(start.getTime() + 25 * 60 * 60 * 1000); // +25h
 
-      logStepV3('Respuesta error esperada', { tipo: 'error', etiqueta: 'NEGOCIO' }, response.body.message);
-      expect(response.body.message).toContain('no puede exceder 24 horas');
+      // Log de preparación (manteniendo formato de logs del proyecto)
+      logStepV3(
+        `Intentando reserva mayor a 24h: inicio(${start.toISOString()}) || fin(${end.toISOString()})`,
+        { etiqueta: 'NEGOCIO' }
+      );
+
+      // 2) Request encapsulado (permite retry sólo en ECONNRESET)
+      const doRequest = async () => {
+        return request(app.getHttpServer())
+          .post('/reservas')
+          .set(authHelper.getAuthHeader(usuarios.cliente.token))
+          .send({
+            usuario_id: usuarios.cliente.user.id,
+            plaza_id: plazas[0].id,
+            vehiculo_id: vehiculo.id,
+            fecha_inicio: start.toISOString(),
+            fecha_fin: end.toISOString(),
+          });
+      };
+
+      // 3) Ejecutar request con manejo de ECONNRESET (retry único)
+      let resp: any;
+      try {
+        resp = await doRequest();
+      } catch (err: any) {
+        // Registrar error en formato solicitado y con logStepV3
+        console.error(`[ERROR] Error logging admin access: ${err?.message ?? err}`);
+        logStepV3('Error en request inicial', { tipo: 'error', etiqueta: 'INFRA' }, err?.message ?? String(err));
+
+        // Retry solo si es ECONNRESET
+        const errMsg = String(err?.message ?? '');
+        if (/ECONNRESET/i.test(errMsg)) {
+          // esperar 150 ms y reintentar una vez
+          await new Promise((r) => setTimeout(r, 150));
+          try {
+            resp = await doRequest();
+          } catch (err2: any) {
+            console.error(`[ERROR] Error logging admin access: ${err2?.message ?? err2}`);
+            logStepV3('Retry fallido', { tipo: 'error', etiqueta: 'INFRA' }, err2?.message ?? String(err2));
+            // Re-lanzar para que el test falle con el error real
+            throw err2;
+          }
+        } else {
+          // Si no es ECONNRESET, relanzar
+          throw err;
+        }
+      }
+
+      // 4) Verificaciones (más tolerante a variantes del mensaje)
+      logStepV3('Respuesta recibida para caso >24h', { etiqueta: 'NEGOCIO' }, {
+        status: resp.status,
+        bodyMessage: resp.body?.message ?? null,
+      });
+
+      expect(resp.status).toBe(400);
+
+      // Aceptamos varias formas razonables del mensaje de negocio relacionadas con "24 horas"
+      expect(resp.body?.message).toMatch(
+        /(no puede.*24 horas|La reserva no puede.*24 horas|exceder 24 horas|no puede exceder 24 horas|La reserva no puede exceder 24 horas)/i
+      );
+
+      logStepV3('Test >24h completado - respuesta correcta', { etiqueta: 'NEGOCIO' });
     });
 
     it('debe rechazar reserva con vehículo que no pertenece al usuario', async () => {

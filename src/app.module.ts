@@ -207,7 +207,7 @@ import { AdminModule } from './admin/admin.module';
           // Validar arrays anidados
           validateCustomDecorators: true,
           // Personalizar mensajes de error
-          errorHttpStatusCode: 422,
+          errorHttpStatusCode: 400,
           // Parar en el primer error encontrado
           stopAtFirstError: true,
         }),

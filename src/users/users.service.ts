@@ -36,18 +36,19 @@ export class UsersService {
    */
   async create(createUserDto: CreateUserDto): Promise<Partial<User>> {
     const { email, password, ...userData } = createUserDto;
+    const emailNorm = email.trim().toLowerCase();
+    
+    this.logger.log(`Creating user with email: ${emailNorm}`);
 
-    this.logger.log(`Creating user with email: ${email}`);
-
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({ where: { email: emailNorm } });
     if (existingUser) {
-      this.logger.warn(`Duplicate email on create: ${email}`);
+      this.logger.warn(`Duplicate email on create: ${emailNorm}`);
       throw new BadRequestException('Email is already registered');
     }
 
     try {
       const hashed = await bcrypt.hash(password, authConstants.saltRounds);
-      const user = this.userRepository.create({ ...userData, email, password: hashed });
+      const user = this.userRepository.create({ ...userData, email: emailNorm, password: hashed });
 
       const saved = await this.userRepository.save(user);
 

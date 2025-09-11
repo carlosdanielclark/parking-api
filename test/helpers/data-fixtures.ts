@@ -426,6 +426,7 @@ export class DataFixtures {
 
   /**
    * Limpieza mejorada de plazas con mejor manejo de errores
+   * EDITADO: ahora intenta limpiar reservas de la plaza y reintenta DELETE con backoff.
    */
   async cleanupPlazas(adminToken: string) {
     let deletedCount = 0;
@@ -438,12 +439,62 @@ export class DataFixtures {
           .set('Authorization', `Bearer ${adminToken}`);
 
         if (response.status === 200) {
-          await this.request
+          // Intento inicial de eliminación
+          const delResp = await this.request
             .delete(`/plazas/${plazaId}`)
             .set('Authorization', `Bearer ${adminToken}`);
 
-          logStepV3(`Plaza ${plazaId} eliminada exitosamente`, { etiqueta: 'Cleanup-Plazas' });
-          deletedCount++;
+          if (delResp.status === 200 || delResp.status === 204) {
+            logStepV3(`Plaza ${plazaId} eliminada exitosamente`, { etiqueta: 'Cleanup-Plazas' });
+            deletedCount++;
+            continue;
+          }
+
+          // Si hay reservas activas, intentar limpiar y reintentar con backoff
+          if (
+            delResp.status === 400 &&
+            typeof delResp.body?.message === 'string' &&
+            delResp.body.message.toLowerCase().includes('reservas activas')
+          ) {
+            logStepV3(`Plaza ${plazaId} tiene reservas activas. Intentando limpiar reservas...`, {
+              etiqueta: 'Cleanup-Plazas',
+              tipo: 'warning',
+            });
+
+            // Intentar limpiar reservas
+            await this.limpiarReservasDePlaza(adminToken, plazaId);
+
+            // Reintentos con backoff
+            const waits = [100, 200, 400];
+            let reintentoExitoso = false;
+            for (let i = 0; i < waits.length; i++) {
+              await new Promise((resolve) => setTimeout(resolve, waits[i]));
+              const del2 = await this.request
+                .delete(`/plazas/${plazaId}`)
+                .set('Authorization', `Bearer ${adminToken}`);
+              if (del2.status === 200 || del2.status === 204) {
+                logStepV3(`Plaza ${plazaId} eliminada después de limpieza`, {
+                  etiqueta: 'Cleanup-Plazas',
+                  tipo: 'info',
+                });
+                deletedCount++;
+                reintentoExitoso = true;
+                break;
+              }
+            }
+
+            if (!reintentoExitoso) {
+              logStepV3(`No se pudo eliminar plaza ${plazaId} luego de reintentos`, {
+                etiqueta: 'Cleanup-Plazas',
+                tipo: 'warning',
+              });
+            }
+          } else {
+            logStepV3(
+              `Respuesta inesperada eliminando plaza ${plazaId}: status ${delResp.status}`,
+              { etiqueta: 'Cleanup-Plazas', tipo: 'warning' }
+            );
+          }
         }
       } catch (error: any) {
         if (error.response?.status === 404) {
@@ -509,6 +560,7 @@ export class DataFixtures {
 
   /**
    * Limpieza mejorada de vehiculo con mejor manejo de errores
+   * EDITADO: ahora utiliza safeDeleteVehiculo() que cancela reservas activas y reintenta DELETE con backoff.
    */
   async cleanupVehiculos(adminToken: string) {
     let deletedCount = 0;
@@ -521,33 +573,26 @@ export class DataFixtures {
           .set('Authorization', `Bearer ${adminToken}`);
 
         if (response.status === 200) {
-          await this.request
-            .delete(`/vehiculos/${vehiculoId}`)
-            .set('Authorization', `Bearer ${adminToken}`);
-
-          logStepV3(`Vehículo ${vehiculoId} eliminado exitosamente`, {
-            etiqueta: 'Cleanup-Vehiculos',
-          });
-          deletedCount++;
+          const success = await this.safeDeleteVehiculo(adminToken, vehiculoId);
+          if (success) {
+            deletedCount++;
+          } else {
+            logStepV3(`No se pudo eliminar vehículo ${vehiculoId} tras reintentos`, {
+              etiqueta: 'Cleanup-Vehiculos',
+              tipo: 'warning',
+            });
+          }
         }
       } catch (error: any) {
         if (error.response?.status === 404) {
           logStepV3(`Vehículo ${vehiculoId} no existe, omitiendo eliminación`, {
             etiqueta: 'Cleanup-Vehiculos',
           });
-        } else if (
-          error.response?.status === 400 &&
-          error.response?.body?.message?.includes('reservas activas')
-        ) {
-          logStepV3(`Vehículo ${vehiculoId} tiene reservas activas, omitiendo eliminación`, {
-            tipo: 'warning',
-            etiqueta: 'CLeanup-Vehiculos',
-          });
         } else {
-          logStepV3(
-            `Error al eliminar vehículo ${vehiculoId}: ${error.response?.body?.message || error.message}`,
-            { tipo: 'warning', etiqueta: 'CLeanup-Vehiculos' }
-          );
+          logStepV3(`Error verificando vehículo ${vehiculoId}: ${error.message}`, {
+            etiqueta: 'Cleanup-Vehiculos',
+            tipo: 'warning',
+          });
         }
       }
     }
@@ -560,6 +605,112 @@ export class DataFixtures {
       }
     );
     this.createdVehiculoIds.clear();
+  }
+
+  /**
+   * NUEVO: Método seguro para eliminar un vehículo. Maneja 400 por reservas activas,
+   * cancela reservas activas y reintenta DELETE con backoff (100,200,400 ms).
+   */
+  private async safeDeleteVehiculo(adminToken: string, vehiculoId: string): Promise<boolean> {
+    try {
+      // Intento inicial de eliminación
+      const initialDel = await this.request
+        .delete(`/vehiculos/${vehiculoId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      if (initialDel.status === 200 || initialDel.status === 204) {
+        logStepV3(`Vehículo ${vehiculoId} eliminado (intento inicial)`, {
+          etiqueta: 'HELPER',
+          tipo: 'info',
+        });
+        return true;
+      }
+
+      // Si backend responde 400 con mensaje de reservas activas, intentar cancelar y reintentar
+      if (
+        initialDel.status === 400 &&
+        typeof initialDel.body?.message === 'string' &&
+        initialDel.body.message.toLowerCase().includes('reservas activas')
+      ) {
+        logStepV3(`Vehículo ${vehiculoId} tiene reservas activas. Obteniendo reservas...`, {
+          etiqueta: 'HELPER',
+          tipo: 'warning',
+        });
+
+        // Obtener reservas asociadas al vehículo
+        const reservasResp = await this.request
+          .get(`/reservas`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .query({ vehiculo_id: vehiculoId });
+
+        if (reservasResp.status === 200 && Array.isArray(reservasResp.body?.data)) {
+          const activas = reservasResp.body.data.filter(
+            (r: any) => r.vehiculo?.id === vehiculoId && r.estado === 'activa'
+          );
+
+          for (const r of activas) {
+            try {
+              await this.request
+                .post(`/reservas/${r.id}/cancelar`)
+                .set('Authorization', `Bearer ${adminToken}`)
+                .timeout(5000);
+              logStepV3(`Reserva ${r.id} cancelada para permitir delete de vehículo ${vehiculoId}`, {
+                etiqueta: 'HELPER',
+                tipo: 'info',
+              });
+            } catch (err: any) {
+              logStepV3(`Error cancelando reserva ${r.id}: ${err.message}`, {
+                etiqueta: 'HELPER',
+                tipo: 'warning',
+              });
+            }
+          }
+        }
+
+        // Reintentos con backoff
+        const waits = [100, 200, 400];
+        for (let i = 0; i < waits.length; i++) {
+          await new Promise((resolve) => setTimeout(resolve, waits[i]));
+          const del2 = await this.request
+            .delete(`/vehiculos/${vehiculoId}`)
+            .set('Authorization', `Bearer ${adminToken}`);
+          if (del2.status === 200 || del2.status === 204) {
+            logStepV3(`Vehículo ${vehiculoId} eliminado tras cancelar reservas (retry)`, {
+              etiqueta: 'HELPER',
+              tipo: 'info',
+            });
+            return true;
+          }
+        }
+
+        logStepV3(`No se pudo eliminar vehículo ${vehiculoId} tras reintentos`, {
+          etiqueta: 'HELPER',
+          tipo: 'warning',
+        });
+        return false;
+      }
+
+      // Otros códigos inesperados
+      logStepV3(
+        `Intento eliminar vehículo ${vehiculoId} devolvió status ${initialDel.status}`,
+        { etiqueta: 'HELPER', tipo: 'warning' }
+      );
+      return false;
+    } catch (error: any) {
+      // Manejo de errores de red
+      if (error.message?.includes('ECONNRESET')) {
+        logStepV3(`ECONNRESET al eliminar vehículo ${vehiculoId}: ${error.message}`, {
+          etiqueta: 'HELPER',
+          tipo: 'warning',
+        });
+      } else {
+        logStepV3(`Error eliminando vehículo ${vehiculoId}: ${error.message}`, {
+          etiqueta: 'HELPER',
+          tipo: 'warning',
+        });
+      }
+      return false;
+    }
   }
 
   /**
@@ -1097,6 +1248,19 @@ export class DataFixtures {
       if (deleteResponse.status === 200 || deleteResponse.status === 204) {
         logStepV3(`${entityName} ${id} eliminado`, { etiqueta: 'HELPER' });
         return true;
+      }
+
+      // Si el delete devuelve 400 por reservas activas, devolver false para que quien llame gestione la limpieza.
+      if (
+        deleteResponse.status === 400 &&
+        typeof deleteResponse.body?.message === 'string' &&
+        deleteResponse.body.message.toLowerCase().includes('reservas activas')
+      ) {
+        logStepV3(
+          `${entityName} ${id} no eliminado por reservas activas. Devolver control al llamador.`,
+          { etiqueta: 'HELPER', tipo: 'warning' }
+        );
+        return false;
       }
 
       return false;
