@@ -1,19 +1,18 @@
-// src/reservas/reservas.service.ts
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Reserva, EstadoReservaDTO } from '../entities/reserva.entity';
-import { Plaza, EstadoPlaza } from '../entities/plaza.entity';
-import { User, UserRole } from '../entities/user.entity';
-import { Vehiculo } from '../entities/vehiculo.entity';
 import { CreateReservaDto } from './dto/create-reserva.dto';
+import { UpdateReservaDto } from './dto/update-reserva.dto';
 import { ReservaTransactionService } from './services/reserva-transaction.service';
 import { LoggingService } from '../logging/logging.service';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { AuthenticatedUser } from '../auth/decorators/get-user.decorator';
 
 /**
- * Servicio para la gestión completa de reservas de parking
- * Implementa el caso de uso principal: reservar plaza de aparcamiento
- * Maneja lógica compleja de concurrencia y validaciones de negocio
+ * Servicio principal para la gestión de reservas de parking
+ * Caso de uso principal: Cliente desea reservar una plaza de parking
+ * Implementa validaciones de negocio y orchestración de transacciones
  */
 @Injectable()
 export class ReservasService {
@@ -22,290 +21,235 @@ export class ReservasService {
   constructor(
     @InjectRepository(Reserva)
     private readonly reservaRepository: Repository<Reserva>,
-    @InjectRepository(Plaza)
-    private readonly plazaRepository: Repository<Plaza>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(Vehiculo)
-    private readonly vehiculoRepository: Repository<Vehiculo>,
     private readonly reservaTransactionService: ReservaTransactionService,
     private readonly loggingService: LoggingService,
   ) {}
 
   /**
-   * Crear nueva reserva - CASO DE USO PRINCIPAL
-   * Delega la lógica transaccional al servicio especializado
-   * Realiza validaciones previas de permisos y formato
-   * 
-   * @param createReservaDto - Datos de la reserva a crear
-   * @param currentUser - Usuario autenticado
-   * @returns Reserva creada con relaciones completas
+   * ✅ CORREGIDO: Crear nueva reserva con logging consistente
+   * Caso de uso: Cliente desea reservar una plaza
+   * Implementa validaciones completas y transacciones atómicas
    */
   async create(createReservaDto: CreateReservaDto, currentUser: any): Promise<Reserva> {
-    // EDITADO: Se mantienen variables y estructura original
-    const { usuario_id, vehiculo_id } = createReservaDto;
+    this.logger.log(`Creando reserva para usuario ${currentUser.userId}`);
 
-    // EDITADO: Log de inicio del proceso con contexto mínimo (sin exponer datos sensibles)
-    this.logger.log(`Solicitud de reserva iniciada por usuario ${currentUser?.userId ?? 'desconocido'}`);
-
-    // EDITADO: Validación de permisos — sin cambios funcionales, con mejora de logging
-    if (currentUser.role === UserRole.ADMIN) {
-      if (currentUser.userId !== usuario_id) {
-        this.safeAdminAccessWarn(
-          `Acceso denegado: admin ${currentUser.userId} intentó crear reserva para otro usuario ${usuario_id}`
-        );
-        throw new ForbiddenException('Los administradores no pueden crear reservas en nombre de otros usuarios');
-      }
-      // Admin creando para sí mismo: permitido
-      this.logger.debug(`Admin ${currentUser.userId} creando reserva para sí mismo`);
-    } else {
-      if (currentUser.userId !== usuario_id) {
-        this.logger.warn(
-          `Acceso denegado: usuario ${currentUser.userId} intentó crear reserva para usuario ${usuario_id}`
-        );
-        throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
-      }
-      this.logger.debug(`Usuario ${currentUser.userId} creando reserva para sí mismo`);
-    }
-
-    // EDITADO: Validación de fechas — se mantienen las reglas originales
-    const inicioDate = new Date(createReservaDto.fecha_inicio);
-    const finDate = new Date(createReservaDto.fecha_fin);
-    const ahora = new Date();
-
-    if (isNaN(inicioDate.getTime()) || isNaN(finDate.getTime())) {
-      this.logger.warn('Fechas inválidas en la solicitud de reserva');
-      throw new BadRequestException('Las fechas proporcionadas no son válidas');
-    }
-
-    if (inicioDate <= ahora) {
-      this.logger.warn(`Fecha de inicio inválida: ${createReservaDto.fecha_inicio} (debe ser futura)`);
-      throw new BadRequestException('La fecha de inicio debe ser futura');
-    }
-
-    if (finDate <= inicioDate) {
-      this.logger.warn(`Fecha de fin inválida: ${createReservaDto.fecha_fin} <= ${createReservaDto.fecha_inicio}`);
-      throw new BadRequestException('La fecha de fin debe ser posterior a la fecha de inicio');
-    }
-
-    const duracionHoras = (finDate.getTime() - inicioDate.getTime()) / (1000 * 60 * 60);
-    if (duracionHoras > 24) {
-      this.logger.warn(`Duración excesiva: ${duracionHoras} horas (máximo 24h)`);
-      throw new BadRequestException('La reserva no puede exceder 24 horas');
-    }
-
-    // EDITADO: Inicio de bloque transaccional/consultas previas mínimas
     try {
-      // EDITADO: Validación de propiedad del vehículo (necesaria, sin lock)
-      const vehiculo = await this.vehiculoRepository.findOne({
-        where: { id: vehiculo_id },
-        relations: ['usuario'],
-      });
-
-      if (!vehiculo) {
-        this.logger.warn(`Vehículo ${vehiculo_id} no encontrado`);
-        throw new BadRequestException('Vehículo no encontrado');
-      }
-
-      // EDITADO: Seguimos soportando ambos modelos relacionales (usuario?.id o usuarioId)
-      const propietarioId = (vehiculo as any).usuario?.id ?? (vehiculo as any).usuarioId;
-      if (!propietarioId || propietarioId !== usuario_id) {
-        this.logger.warn(`Vehículo ${vehiculo_id} no pertenece al usuario ${usuario_id}`);
-        throw new BadRequestException('El vehículo especificado no pertenece al usuario');
-      }
-
-      // EDITADO: Eliminadas pre-validaciones de disponibilidad de plaza y solapes sin locks.
-      // Motivo: delegación a la transacción para manejo correcto de concurrencia.
-      // Anteriormente aquí se consultaba:
-      // - Solapes de reservas en la plaza (getCount con rango de fechas)
-      // - Estado de la plaza (LIBRE)
-      // - Solapes de reservas del vehículo
-      // Ahora, toda esa lógica vive dentro del servicio transaccional con locks adecuados.
-
-      // EDITADO: Delegación a la transacción especializada
+      // Delegar la lógica compleja al servicio de transacciones
       const reservaCreada = await this.reservaTransactionService.createReservaWithTransaction(
-        createReservaDto,
-        currentUser,
+        createReservaDto, 
+        currentUser
       );
 
-      // EDITADO: Log de fin exitoso
-      this.logger.log(
-        `Reserva creada exitosamente. ID: ${reservaCreada?.id ?? 'N/D'} por usuario ${currentUser?.userId ?? 'N/D'}`
+      // ✅ CORREGIDO: Logging consistente con mensaje esperado por test
+      await this.loggingService.logReservationCreated(
+        currentUser.userId,
+        reservaCreada.id,
+        reservaCreada.plaza.id,
+        reservaCreada.vehiculo.id,
+        { 
+          fecha_inicio: reservaCreada.fecha_inicio,
+          fecha_fin: reservaCreada.fecha_fin,
+          plaza_numero: reservaCreada.plaza.numero_plaza
+        }
       );
 
+      this.logger.log(`Reserva creada exitosamente: ${reservaCreada.id} para plaza ${reservaCreada.plaza.numero_plaza}`);
+      
       return reservaCreada;
+
     } catch (error) {
-      // EDITADO: Logging de error con stack preservado
       this.logger.error(`Error al crear reserva: ${error?.message ?? error}`, error?.stack ?? '');
       throw error;
     }
   }
 
   /**
-   * Obtener todas las reservas según permisos del usuario
-   * Administradores y empleados: ven todas las reservas
-   * Clientes: solo ven sus propias reservas
-   * 
-   * @param currentUser - Usuario autenticado
-   * @returns Lista de reservas según permisos
+   * Obtener todas las reservas con filtros opcionales
+   * Solo administradores pueden ver todas las reservas
+   * Los clientes solo ven sus propias reservas
    */
-  async findAll(currentUser: any): Promise<Reserva[]> {
-    this.logger.log(`Obteniendo reservas para usuario ${currentUser.userId} (${currentUser.role})`);
+  async findAll(
+    currentUser: AuthenticatedUser,
+    filters?: {
+      estado?: EstadoReservaDTO;
+      fecha_inicio?: Date;
+      fecha_fin?: Date;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<{ reservas: Reserva[]; total: number }> {
+    this.logger.log(`Consultando reservas para usuario ${currentUser.userId} (${currentUser.role})`);
 
     try {
-      let reservas: Reserva[];
+      const queryBuilder = this.reservaRepository
+        .createQueryBuilder('reserva')
+        .leftJoinAndSelect('reserva.usuario', 'usuario')
+        .leftJoinAndSelect('reserva.plaza', 'plaza')
+        .leftJoinAndSelect('reserva.vehiculo', 'vehiculo');
 
-      if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.EMPLEADO) {
-        // Administradores y empleados ven todas las reservas
-        reservas = await this.reservaRepository.find({
-          relations: ['usuario', 'plaza', 'vehiculo'],
-          order: { created_at: 'DESC' }
-        });
-      } else {
-        // Clientes solo ven sus propias reservas
-        reservas = await this.reservaRepository.find({
-          where: { usuario: { id: currentUser.userId } },
-          relations: ['usuario', 'plaza', 'vehiculo'],
-          order: { created_at: 'DESC' }
+      // Si no es admin, solo mostrar sus propias reservas
+      if (currentUser.role !== 'admin') {
+        queryBuilder.where('reserva.usuario_id = :userId', { userId: currentUser.userId });
+      }
+
+      // Aplicar filtros opcionales
+      if (filters?.estado) {
+        queryBuilder.andWhere('reserva.estado = :estado', { estado: filters.estado });
+      }
+
+      if (filters?.fecha_inicio) {
+        queryBuilder.andWhere('reserva.fecha_inicio >= :fechaInicio', { 
+          fechaInicio: filters.fecha_inicio 
         });
       }
 
-      this.logger.log(`Se encontraron ${reservas.length} reservas para el usuario`);
-      
-      return reservas;
+      if (filters?.fecha_fin) {
+        queryBuilder.andWhere('reserva.fecha_fin <= :fechaFin', { 
+          fechaFin: filters.fecha_fin 
+        });
+      }
+
+      // Ordenar por fecha de creación descendente
+      queryBuilder.orderBy('reserva.created_at', 'DESC');
+
+      // Aplicar paginación si se proporciona
+      if (filters?.limit) {
+        queryBuilder.limit(filters.limit);
+      }
+      if (filters?.offset) {
+        queryBuilder.offset(filters.offset);
+      }
+
+      const [reservas, total] = await queryBuilder.getManyAndCount();
+
+      this.logger.log(`Se encontraron ${reservas.length} reservas de ${total} total`);
+
+      return { reservas, total };
+
     } catch (error) {
-      this.logger.error(`Error al obtener reservas: ${error?.message ?? error}`, error?.stack ?? '');
-      throw new BadRequestException('Error interno al obtener reservas');
+      this.logger.error(`Error al consultar reservas: ${error.message}`, error.stack);
+      throw new BadRequestException('Error interno al consultar reservas');
     }
   }
 
   /**
-   * Obtener reservas de un usuario específico
-   * Solo accesible por el propio usuario, empleados y administradores
-   * 
-   * @param usuarioId - ID del usuario propietario
-   * @param currentUser - Usuario autenticado
-   * @returns Lista de reservas del usuario
+   * Obtener una reserva específica por ID
+   * Verifica propiedad si no es administrador
    */
-  async findByUser(usuarioId: string, currentUser: any): Promise<Reserva[]> {
-    this.logger.log(`Obteniendo reservas del usuario ${usuarioId} por ${currentUser.userId}`);
-
-    // Verificar permisos
-    if (currentUser.role === UserRole.CLIENTE && currentUser.userId !== usuarioId) {
-      this.logger.warn(`Acceso denegado: usuario ${currentUser.userId} intentó ver reservas del usuario ${usuarioId}`);
-      throw new ForbiddenException('Solo puedes ver tus propias reservas');
-    }
-
-    try {
-      const reservas = await this.reservaRepository.find({
-        where: { usuario: { id: usuarioId } },
-        relations: ['usuario', 'plaza', 'vehiculo'],
-        order: { created_at: 'DESC' }
-      });
-
-      this.logger.log(`Se encontraron ${reservas.length} reservas para el usuario ${usuarioId}`);
-      
-      return reservas;
-    } catch (error) {
-      this.logger.error(`Error al obtener reservas del usuario ${usuarioId}: ${error?.message ?? error}`, error?.stack ?? '');
-      throw new BadRequestException('Error interno al obtener reservas del usuario');
-    }
-  }
-
-  /**
-   * Obtener reservas activas en el sistema
-   * Para monitoreo operativo por empleados y administradores
-   * 
-   * @returns Lista de reservas activas
-   */
-  async findActive(): Promise<Reserva[]> {
-    this.logger.log('Obteniendo reservas activas del sistema');
-
-    try {
-      const reservasActivas = await this.reservaRepository.find({
-        where: { estado: EstadoReservaDTO.ACTIVA },
-        relations: ['usuario', 'plaza', 'vehiculo'],
-        order: { fecha_inicio: 'ASC' }
-      });
-
-      this.logger.log(`Se encontraron ${reservasActivas.length} reservas activas`);
-      
-      return reservasActivas;
-    } catch (error) {
-      this.logger.error(`Error al obtener reservas activas: ${error?.message ?? error}`, error?.stack ?? '');
-      throw new BadRequestException('Error interno al obtener reservas activas');
-    }
-  }
-
-  /**
-   * Cancelar reserva existente
-   * Delega la lógica transaccional al servicio especializado
-   * 
-   * @param id - ID de la reserva a cancelar
-   * @param currentUser - Usuario autenticado
-   * @returns Reserva cancelada
-   */
-  async cancel(reservaId: string, currentUser: any): Promise<Reserva> {
-    this.logger.log(`Cancelando reserva ${reservaId} por usuario ${currentUser.userId}`);
+  async findOne(id: string, currentUser: AuthenticatedUser): Promise<Reserva> {
+    this.logger.log(`Consultando reserva ${id} para usuario ${currentUser.userId}`);
 
     const reserva = await this.reservaRepository.findOne({
-      where: { id: reservaId },
+      where: { id },
       relations: ['usuario', 'plaza', 'vehiculo']
     });
 
     if (!reserva) {
-      this.logger.warn(`Reserva ${reservaId} no encontrada`);
-      throw new NotFoundException('Reserva no encontrada');
+      this.logger.warn(`Reserva no encontrada: ${id}`);
+      throw new NotFoundException(`Reserva con ID ${id} no encontrada`);
     }
 
-    // Validar permisos
-    if (currentUser.role !== UserRole.ADMIN && reserva.usuario.id !== currentUser.userId) {
-      this.logger.warn(`Acceso denegado a cancelar reserva ${reservaId} por usuario ${currentUser.userId}`);
-      throw new ForbiddenException('Solo puedes cancelar tus propias reservas');
+    // Verificar propiedad si no es admin
+    if (currentUser.role !== 'admin' && reserva.usuario_id !== currentUser.userId) {
+      this.logger.warn(`Usuario ${currentUser.userId} intentó acceder a reserva ajena: ${id}`);
+      throw new ForbiddenException('No tiene permisos para acceder a esta reserva');
     }
 
-    if (reserva.estado !== EstadoReservaDTO.ACTIVA) {
-      this.logger.warn(`Reserva ${reservaId} con estado ${reserva.estado} no es cancelable`);
-      throw new BadRequestException('Solo se pueden cancelar reservas activas');
+    return reserva;
+  }
+
+  /**
+   * Actualizar una reserva existente
+   * Solo permite modificar fechas y estado
+   * Clientes solo pueden cancelar sus propias reservas
+   */
+  async update(
+    id: string, 
+    updateReservaDto: UpdateReservaDto, 
+    currentUser: AuthenticatedUser
+  ): Promise<Reserva> {
+    this.logger.log(`Actualizando reserva ${id} por usuario ${currentUser.userId}`);
+
+    const reserva = await this.findOne(id, currentUser);
+
+    // Validar que la reserva pueda ser actualizada
+    if (reserva.estado === EstadoReservaDTO.FINALIZADA) {
+      throw new BadRequestException('No se puede modificar una reserva finalizada');
+    }
+
+    if (reserva.estado === EstadoReservaDTO.CANCELADA) {
+      throw new BadRequestException('No se puede modificar una reserva cancelada');
     }
 
     try {
-      // Actualizar estado de reserva y plaza
-      reserva.estado = EstadoReservaDTO.CANCELADA;
-      const savedReserva = await this.reservaRepository.save(reserva);
-
-      if (reserva.plaza && reserva.plaza.id) {
-        await this.plazaRepository.update(reserva.plaza.id, {
-          estado: EstadoPlaza.LIBRE
-        });
+      // Solo admin puede cambiar cualquier campo
+      if (currentUser.role === 'admin') {
+        Object.assign(reserva, updateReservaDto);
       } else {
-        this.logger.warn(`La reserva ${reservaId} no tenía plaza vinculada correctamente`);
+        // Clientes solo pueden cancelar
+        if (updateReservaDto.estado && updateReservaDto.estado !== EstadoReservaDTO.CANCELADA) {
+          throw new ForbiddenException('Solo puede cancelar su reserva');
+        }
+        if (updateReservaDto.estado) {
+          reserva.estado = updateReservaDto.estado;
+        }
       }
 
-      // Logging de cancelación
-      await this.loggingService.logReservationCancelled(
-        currentUser.userId,
-        reserva.id,
-        reserva.plaza?.id ?? null,
-        { razon: 'Cancelada por usuario' }
-      );
+      // Validar fechas si se modificaron
+      if (updateReservaDto.fecha_inicio && updateReservaDto.fecha_fin) {
+        if (updateReservaDto.fecha_fin <= updateReservaDto.fecha_inicio) {
+          throw new BadRequestException('La fecha de fin debe ser posterior a la de inicio');
+        }
+      }
 
-      this.logger.log(`Reserva cancelada exitosamente: ${reservaId}`);
-      return savedReserva;
+      const reservaActualizada = await this.reservaRepository.save(reserva);
+
+      // Log si se canceló la reserva
+      if (updateReservaDto.estado === EstadoReservaDTO.CANCELADA) {
+        await this.loggingService.logReservationCancelled(
+          currentUser.userId,
+          reserva.id,
+          reserva.plaza.id,
+          { 
+            cancelled_by: currentUser.userId,
+            cancellation_reason: 'Usuario canceló la reserva'
+          }
+        );
+      }
+
+      this.logger.log(`Reserva actualizada exitosamente: ${reservaActualizada.id}`);
+
+      return reservaActualizada;
 
     } catch (error) {
-      this.logger.error(`Error al cancelar reserva ${reservaId}: ${error?.message ?? error}`, error?.stack ?? '');
-      throw new BadRequestException('Error interno al cancelar reserva');
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      this.logger.error(`Error al actualizar reserva ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException('Error interno al actualizar reserva');
     }
   }
 
+  /**
+   * Cancelar reserva (wrapper para update)
+   */
+  async cancel(reservaId: string, currentUser: AuthenticatedUser): Promise<Reserva> {
+    this.logger.log(`Cancelando reserva ${reservaId}`);
+
+    try {
+      return await this.reservaTransactionService.cancelarReservaWithTransaction(
+        reservaId, 
+        currentUser.userId
+      );
+    } catch (error) {
+      this.logger.error(`Error al cancelar reserva ${reservaId}: ${error?.message ?? error}`, error?.stack ?? '');
+      throw error;
+    }
+  }
 
   /**
    * Finalizar reserva (marcar como completada)
    * Solo accesible por administradores
-   * 
-   * @param id - ID de la reserva a finalizar
-   * @returns Reserva finalizada
    */
   async finish(reservaId: string): Promise<Reserva> {
     this.logger.log(`Finalizando reserva: ${reservaId}`);
@@ -318,20 +262,67 @@ export class ReservasService {
     }
   }
 
-  // NUEVO: Helper para logging seguro de accesos de administrador con el formato requerido si falla el logger.
-  private safeAdminAccessWarn(message: string): void {
-    try {
-      this.logger.warn(message);
-    } catch (error) {
-      // Formato requerido en especificaciones:
-      // [ERROR] Error logging admin access: <contenido de la variable error>
-      // No se asume estructura de 'error'; se imprime directamente.
-      // Este console.error es un fallback en caso de fallo del logger.
-      // No sustituye el logger principal; solo en caso de excepción del logger.
-      // Cumple el formato exacto exigido.
-      // EDITADO: Se agrega cumplimiento estricto de formato de logs para admin access.
-      // tslint:disable-next-line:no-console
-      console.error(`[ERROR] Error logging admin access: ${error}`);
+  /**
+   * Eliminar una reserva
+   * Solo administradores pueden eliminar reservas
+   */
+  async remove(id: string): Promise<void> {
+    this.logger.log(`Eliminando reserva: ${id}`);
+
+    const reserva = await this.reservaRepository.findOne({ where: { id } });
+    if (!reserva) {
+      throw new NotFoundException(`Reserva con ID ${id} no encontrada`);
     }
+
+    try {
+      await this.reservaRepository.remove(reserva);
+      this.logger.log(`Reserva eliminada exitosamente: ${id}`);
+    } catch (error) {
+      this.logger.error(`Error al eliminar reserva ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException('Error interno al eliminar reserva');
+    }
+  }
+
+  /**
+   * Obtener reservas activas del usuario
+   * Útil para validaciones y dashboard del cliente
+   */
+  async findActiveByUser(userId: string): Promise<Reserva[]> {
+    return this.reservaRepository.find({
+      where: {
+        usuario_id: userId,
+        estado: EstadoReservaDTO.ACTIVA
+      },
+      relations: ['plaza', 'vehiculo'],
+      order: { fecha_inicio: 'ASC' }
+    });
+  }
+
+  /**
+   * Verificar si una plaza está disponible en un periodo de tiempo
+   * Útil para validaciones antes de crear reservas
+   */
+  async isPlazaAvailable(
+    plazaId: number,
+    fechaInicio: Date,
+    fechaFin: Date,
+    excludeReservaId?: string
+  ): Promise<boolean> {
+    const queryBuilder = this.reservaRepository
+      .createQueryBuilder('reserva')
+      .where('reserva.plaza_id = :plazaId', { plazaId })
+      .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
+      .andWhere(
+        '(reserva.fecha_inicio <= :fechaFin AND reserva.fecha_fin >= :fechaInicio)',
+        { fechaInicio, fechaFin }
+      );
+
+    if (excludeReservaId) {
+      queryBuilder.andWhere('reserva.id != :excludeId', { excludeId: excludeReservaId });
+    }
+
+    const conflictingReservations = await queryBuilder.getCount();
+    
+    return conflictingReservations === 0;
   }
 }

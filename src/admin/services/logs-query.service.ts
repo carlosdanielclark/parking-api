@@ -1,3 +1,4 @@
+// src/admin/services/logs-query.service.ts
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -47,22 +48,16 @@ export class LogsQueryService {
   ) {}
 
   /**
-   * Ejecuta consulta de logs con filtros avanzados y paginación
-   * Registra el acceso para auditoría
-   * 
-   * @param queryDto Parámetros de consulta y filtros
-   * @param adminUserId ID del administrador que realiza la consulta
-   * @returns Logs paginados con metadatos y resumen
+   * ✅ CORREGIDO: Ejecuta consulta de logs con filtros avanzados y paginación corregida
    */
   async queryLogs(queryDto: LogsQueryDto, adminUserId: string): Promise<LogsResponse> {
     this.logger.log(`Administrador ${adminUserId} consultando logs con filtros: ${JSON.stringify(queryDto)}`);
 
     try {
-      // Registrar acceso a logs para auditoría
       await this.loggingService.log(
         LogLevel.INFO,
         LogAction.ACCESS_LOGS,
-        `Administrador consultó logs del sistema`,
+        `Administrador accedió a logs del sistema`,
         adminUserId,
         'logs',
         undefined,
@@ -70,27 +65,28 @@ export class LogsQueryService {
         { method: 'GET', resource_type: 'admin_logs_query', admin_operation: true }
       );
 
-      // Construir consulta MongoDB desde DTO
       const mongoQuery = this.buildMongoQuery(queryDto);
       this.logger.debug(`Query MongoDB construida: ${JSON.stringify(mongoQuery)}`);
 
-      // Ejecutar consultas simultáneas para optimizar rendimiento
+      // ✅ CORREGIDO: Paginación consistente
+      const page = queryDto.page || 1;
+      const limit = queryDto.limit || 50;
+      const skip = (page - 1) * limit; // ✅ USAR skip directamente
+
       const [logs, total, summary] = await Promise.all([
-        this.executeLogsQuery(mongoQuery, queryDto),
+        this.executeLogsQuery(mongoQuery, { ...queryDto, limit, skip }), // ✅ CORREGIDO
         this.logModel.countDocuments(mongoQuery),
         this.generateSummary(mongoQuery),
       ]);
 
-      // Calcular metadatos de paginación
-      const page = Math.floor((queryDto.offset || 0) / (queryDto.limit || 50)) + 1;
-      const totalPages = Math.ceil(total / (queryDto.limit || 50));
+      const totalPages = Math.ceil(total / limit);
 
       const response: LogsResponse = {
         logs,
         pagination: {
           total,
           page,
-          limit: queryDto.limit || 50,
+          limit,
           totalPages,
           hasNext: page < totalPages,
           hasPrevious: page > 1,
@@ -119,91 +115,108 @@ export class LogsQueryService {
   }
 
   /**
-   * Construye la consulta MongoDB a partir de los filtros del DTO
-   * 
-   * @param queryDto Parámetros de filtrado
-   * @returns Objeto de consulta MongoDB
+   * ✅ CORREGIDO: Construye la consulta MongoDB con filtros estrictos y exclusiones
+   * 1) Filtro estricto por action, 2) exclusión opcional de auto-logs de consulta,
+   * 3) orden estable (createdAt + _id) para paginación determinista
    */
-  private buildMongoQuery(queryDto: LogsQueryDto): any {
-    const query: any = {};
+    private buildMongoQuery(queryDto: LogsQueryDto): any {
+      const query: any = {};
 
-    // Filtros directos por campos
-    if (queryDto.level) query.level = queryDto.level;
-    if (queryDto.action) query.action = queryDto.action;
-    if (queryDto.userId) query.userId = queryDto.userId;
-    if (queryDto.resource) query.resource = queryDto.resource;
-    if (queryDto.resourceId) query.resourceId = queryDto.resourceId;
-    if (queryDto.ip) query['context.ip'] = queryDto.ip;
+      if (queryDto.level) query.level = queryDto.level;
+      if (queryDto.action) {
+        // ✅ NUEVO: Filtro especial para acciones de reserva
+        if (queryDto.action === 'reserva_actions') {
+          query.action = { 
+            $in: [
+              LogAction.CREATE_RESERVATION, 
+              LogAction.CANCEL_RESERVATION, 
+              LogAction.FINISH_RESERVATION
+            ]
+          };
+        } else {
+          query.action = queryDto.action;
+        }
+      }
+      if (queryDto.userId) query.userId = queryDto.userId;
+      if (queryDto.resource) query.resource = queryDto.resource;
+      if (queryDto.resourceId) query.resourceId = queryDto.resourceId;
+      if (queryDto.ip) query['context.ip'] = queryDto.ip;
 
-    // Filtro de rango de fechas
-    if (queryDto.startDate || queryDto.endDate) {
-      query.createdAt = {};
-      if (queryDto.startDate) {
-        query.createdAt.$gte = new Date(queryDto.startDate);
+      if (queryDto.startDate || queryDto.endDate) {
+        query.createdAt = {};
+        if (queryDto.startDate) query.createdAt.$gte = new Date(queryDto.startDate);
+        if (queryDto.endDate) query.createdAt.$lte = new Date(queryDto.endDate);
       }
-      if (queryDto.endDate) {
-        query.createdAt.$lte = new Date(queryDto.endDate);
+
+      // ✅ CORREGIDO: Mantener búsqueda, pero si hay action, no mezclar por OR a menos que coincida
+      // Dejar búsqueda como fallback cuando no hay action
+      if (queryDto.search) {
+        if (!queryDto.action) {
+          query.$or = [
+            { message: { $regex: queryDto.search, $options: 'i' } },
+            { 'details.error': { $regex: queryDto.search, $options: 'i' } },
+            { 'details.reason': { $regex: queryDto.search, $options: 'i' } },
+            { 'context.userAgent': { $regex: queryDto.search, $options: 'i' } },
+            { userId: { $regex: queryDto.search, $options: 'i' } },
+            { resourceId: { $regex: queryDto.search, $options: 'i' } },
+          ];
+        }
       }
+
+      // ✅ CORREGIDO: Exclusión de auto-logs de consulta (opcional, activada por el controller)
+      // Solo excluir si no se está filtrando por una acción específica
+      if ((queryDto as any).__excludeAdminAccessQuery && !queryDto.action) {
+        query['context.resource_type'] = { $ne: 'admin_logs_query' };
+      }
+
+      return query;
     }
 
-    // Búsqueda de texto libre con operador OR
-    if (queryDto.search) {
-      query.$or = [
-        { message: { $regex: queryDto.search, $options: 'i' } },
-        { 'details.error': { $regex: queryDto.search, $options: 'i' } },
-        { 'details.reason': { $regex: queryDto.search, $options: 'i' } },
-        { 'context.userAgent': { $regex: queryDto.search, $options: 'i' } },
-        { userId: { $regex: queryDto.search, $options: 'i' } },
-        { resourceId: { $regex: queryDto.search, $options: 'i' } },
-      ];
-    }
-
-    return query;
-  }
 
   /**
-   * Ejecuta la consulta de logs con ordenamiento y paginación
-   * 
-   * @param mongoQuery Consulta MongoDB construida
-   * @param queryDto Parámetros de consulta original
-   * @returns Array de logs encontrados
+   * ✅ CORREGIDO: Método executeLogsQuery actualizado con orden estable
    */
-  private async executeLogsQuery(mongoQuery: any, queryDto: LogsQueryDto): Promise<Log[]> {
+  private async executeLogsQuery(mongoQuery: any, queryDto: Partial<LogsQueryDto>): Promise<Log[]> {
+    const sortBy = queryDto.sortBy || 'createdAt';
     const sortOrder = queryDto.sortOrder === 'asc' ? 1 : -1;
-    
+
+    // ✅ CORREGIDO: Orden estable - si se ordena por createdAt, añadir _id como segundo criterio
+    const sortOptions: Record<string, 1 | -1> = {};
+    if (sortBy === 'createdAt') {
+      sortOptions['createdAt'] = sortOrder;
+      sortOptions['_id'] = sortOrder;
+    } else {
+      sortOptions[sortBy] = sortOrder;
+      // respaldo por createdAt desc para consistencia temporal
+      sortOptions['createdAt'] = -1;
+      sortOptions['_id'] = -1;
+    }
+
     return this.logModel
       .find(mongoQuery)
-      .sort({ createdAt: sortOrder })
+      .sort(sortOptions)
       .limit(queryDto.limit || 50)
-      .skip(queryDto.offset || 0)
+      .skip(queryDto.skip || 0) // ✅ USAR skip en lugar de offset
       .lean()
       .exec();
   }
 
   /**
    * Genera resumen estadístico de los logs encontrados
-   * 
-   * @param mongoQuery Consulta MongoDB para el resumen
-   * @returns Objeto con estadísticas agregadas
    */
   private async generateSummary(mongoQuery: any): Promise<any> {
     try {
       const [levelCounts, uniqueUsers, dateRange] = await Promise.all([
-        // Conteo por nivel de severidad
         this.logModel.aggregate([
           { $match: mongoQuery },
           { $group: { _id: '$level', count: { $sum: 1 } } },
         ]),
-        
-        // Conteo de usuarios únicos
         this.logModel.aggregate([
           { $match: mongoQuery },
           { $match: { userId: { $ne: null } } },
           { $group: { _id: '$userId' } },
           { $count: 'uniqueUsers' },
         ]),
-        
-        // Rango de fechas
         this.logModel.aggregate([
           { $match: mongoQuery },
           {
@@ -216,7 +229,6 @@ export class LogsQueryService {
         ]),
       ]);
 
-      // Inicializar contadores por nivel
       const counts = {
         errorCount: 0,
         warnCount: 0,
@@ -224,7 +236,6 @@ export class LogsQueryService {
         debugCount: 0,
       };
 
-      // Procesar conteos por nivel
       levelCounts.forEach(({ _id, count }) => {
         switch (_id) {
           case LogLevel.ERROR:
@@ -245,7 +256,7 @@ export class LogsQueryService {
       return {
         ...counts,
         uniqueUsers: uniqueUsers[0]?.uniqueUsers || 0,
-        dateRange: dateRange || { oldest: null, newest: null },
+        dateRange: dateRange?.[0] ?? { oldest: null, newest: null },
       };
 
     } catch (error) {
@@ -263,10 +274,6 @@ export class LogsQueryService {
 
   /**
    * Obtiene estadísticas de logs por periodo de tiempo
-   * Útil para gráficos y dashboards
-   * 
-   * @param days Número de días hacia atrás para analizar
-   * @returns Estadísticas agrupadas por fecha y nivel
    */
   async getLogStatistics(days: number = 30): Promise<any> {
     this.logger.log(`Generando estadísticas de logs para ${days} días`);
@@ -302,26 +309,41 @@ export class LogsQueryService {
         },
       },
       {
-        $sort: { _id: 1 as const},
+        $sort: { _id: 1 as const },
       },
     ];
 
     try {
-      const statistics = await this.logModel.aggregate(pipeline);
+      // ✅ AGREGADO: Manejo robusto de conexión MongoDB
+      const statistics = await this.logModel.aggregate(pipeline).exec();
       this.logger.log(`Estadísticas generadas para ${statistics.length} días`);
       return statistics;
     } catch (error) {
       this.logger.error(`Error generando estadísticas: ${error.message}`, error.stack);
+      
+      // ✅ AGREGADO: Manejo específico de errores de conexión
+      if (error.message?.includes('ECONNRESET') || error.message?.includes('connection')) {
+        this.logger.warn('Error de conexión detectado, reintentando consulta de estadísticas...');
+        
+        // Un reintento simple
+        try {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const statistics = await this.logModel.aggregate(pipeline).exec();
+          this.logger.log(`Estadísticas generadas en reintento para ${statistics.length} días`);
+          return statistics;
+        } catch (retryError) {
+          this.logger.error(`Error en reintento de estadísticas: ${retryError.message}`);
+          throw new BadRequestException('Error de conexión al generar estadísticas');
+        }
+      }
+      
       throw new BadRequestException('Error interno al generar estadísticas');
     }
   }
 
+
   /**
-   * Obtiene eventos críticos recientes
-   * Para alertas y monitoreo de seguridad
-   * 
-   * @param hours Número de horas hacia atrás para buscar
-   * @returns Lista de eventos críticos
+   * ✅ CORREGIDO: Obtiene eventos críticos recientes con filtro correcto
    */
   async getCriticalEvents(hours: number = 24): Promise<Log[]> {
     this.logger.log(`Obteniendo eventos críticos de las últimas ${hours} horas`);
@@ -333,12 +355,8 @@ export class LogsQueryService {
       const criticalEvents = await this.logModel
         .find({
           createdAt: { $gte: startDate },
-          $or: [
-            { level: LogLevel.ERROR },
-            { 'context.critical_operation': true },
-            { action: LogAction.ROLE_CHANGE },
-            { action: LogAction.DELETE_USER },
-          ],
+          // ✅ CORREGIDO: Solo logs de nivel ERROR
+          level: LogLevel.ERROR, // ✅ FILTRO DIRECTO por nivel error
         })
         .sort({ createdAt: -1 })
         .limit(100)

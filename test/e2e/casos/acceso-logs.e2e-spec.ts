@@ -38,7 +38,9 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   beforeEach(async () => {
     usuarios = await authHelper.createMultipleUsers();
 
-    // Generar actividad para crear logs
+    // Resetear completamente sets estáticos y contadores: evita colisiones de numero_plaza y placas
+    DataFixtures.clearGeneratedPlazaNumbers();
+
     await generarActividadDePrueba();
   });
 
@@ -50,15 +52,22 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     const vehiculo = await dataFixtures.createVehiculo(
       usuarios.cliente.user.id,
       usuarios.cliente.token,
-      { placa: 'LOG001' }
+      {}
     );
 
     // Crear reserva (genera log de create_reservation)
+    const start = new Date(Date.now() + 2 * 60 * 1000);
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
     const reserva = await dataFixtures.createReserva(
-      usuarios.cliente.user.id,
-      plazas[0].id,
-      vehiculo.id,
-      usuarios.cliente.token
+      usuarios.cliente.token,
+      {
+        usuario_id: usuarios.cliente.user.id,
+        plaza: plazas[0],
+        vehiculo_id: vehiculo.id,
+        fecha_inicio: start,
+        fecha_fin: end
+      }
     );
 
     // Cancelar reserva (genera log de cancel_reservation)
@@ -79,7 +88,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       .post('/auth/login')
       .send({
         email: usuarios.empleado.user.email,
-        password: 'empleado123456',
+        password: 'empleado123',
       })
       .expect(200);
 
@@ -510,21 +519,25 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     const vehiculo = await dataFixtures.createVehiculo(
       clienteExtra.user.id,
       clienteExtra.token,
-      { placa: 'EXTRA01' }
+      {}
     );
 
     // Crear y cancelar reservas para generar más logs
     for (let i = 0; i < 2; i++) {
-      const fecha_inicio = dataFixtures.generateFutureDate(i + 2);
-      const fecha_fin = dataFixtures.generateFutureDate(i + 3);
+      const fechaInicio = new Date(dataFixtures.generateFutureDate(i + 2));
+      const fechaFin = new Date(dataFixtures.generateFutureDate(i + 3));
 
       const reserva = await dataFixtures.createReserva(
-        clienteExtra.user.id,
-        plazas[i].id,
-        vehiculo.id,
         clienteExtra.token,
-        { fecha_inicio, fecha_fin } // ahora el nombre de las propiedades es correcto
+        {
+          usuario_id: clienteExtra.user.id,
+          plaza: plazas[i],
+          vehiculo_id: vehiculo.id,
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin
+        }
       );
+    
 
       await request(app.getHttpServer())
         .post(`/reservas/${reserva.id}/cancelar`)

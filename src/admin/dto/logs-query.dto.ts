@@ -1,11 +1,6 @@
 import { IsOptional, IsEnum, IsDateString, IsString, IsInt, Min, Max } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Log } from '../../schemas/log.schema';
-import { LoggingService } from '../../logging/logging.service';
-import { LogLevel, LogAction } from '../../schemas/log.schema';
+import { LogLevel, LogAction, LogActionFilter } from '../../schemas/log.schema';
 
 /**
  * DTO para consultas avanzadas de logs administrativos
@@ -25,14 +20,13 @@ export class LogsQueryDto {
    * Permite buscar eventos específicos como login, reservas, etc.
    */
   @IsOptional()
-  @IsEnum(LogAction, { 
-    message: 'La acción debe ser válida según LogAction enum' 
+  @IsEnum([...Object.values(LogAction), 'reserva_actions'] as const, { 
+    message: 'La acción debe ser válida según LogAction enum o "reserva_actions"' 
   })
-  action?: LogAction;
+  action?: LogActionFilter; 
 
   /**
    * Filtrar por ID de usuario específico
-   * Para rastrear actividad de un usuario particular
    */
   @IsOptional()
   @IsString({ message: 'El ID de usuario debe ser una cadena válida' })
@@ -40,7 +34,6 @@ export class LogsQueryDto {
 
   /**
    * Filtrar por tipo de recurso afectado
-   * Ejemplos: user, reserva, plaza, vehiculo
    */
   @IsOptional()
   @IsString({ message: 'El recurso debe ser una cadena válida' })
@@ -48,31 +41,36 @@ export class LogsQueryDto {
 
   /**
    * Filtrar por ID específico del recurso
-   * Para rastrear cambios en entidades específicas
    */
   @IsOptional()
   @IsString({ message: 'El ID del recurso debe ser una cadena válida' })
   resourceId?: string;
 
   /**
-   * Fecha de inicio para filtrar logs
-   * Formato ISO 8601
+   * Fecha de inicio en formato ISO
    */
   @IsOptional()
   @IsDateString({}, { message: 'La fecha de inicio debe ser válida en formato ISO' })
   startDate?: string;
 
   /**
-   * Fecha de fin para filtrar logs
-   * Debe ser posterior a startDate si se especifica
+   * Fecha de fin en formato ISO
    */
   @IsOptional()
   @IsDateString({}, { message: 'La fecha de fin debe ser válida en formato ISO' })
   endDate?: string;
 
   /**
-   * Número máximo de registros por página
-   * Rango: 1-500, por defecto 50
+   * Página para paginación (opcional)
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'La página debe ser un número entero' })
+  @Min(1, { message: 'La página debe ser mayor a 0' })
+  page?: number = 1;
+
+  /**
+   * Número de registros por página (opcional)
    */
   @IsOptional()
   @Type(() => Number)
@@ -82,26 +80,23 @@ export class LogsQueryDto {
   limit?: number = 50;
 
   /**
-   * Número de registros a saltar (para paginación)
-   * Mínimo: 0, por defecto 0
+   * ✅ NUEVO: Skip directo para paginación interna
    */
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: 'El offset debe ser un número entero' })
-  @Min(0, { message: 'El offset debe ser mayor o igual a 0' })
-  offset?: number = 0;
+  @IsInt({ message: 'El skip debe ser un número entero' })
+  @Min(0, { message: 'El skip debe ser mayor o igual a 0' })
+  skip?: number;
 
   /**
-   * Búsqueda de texto libre en logs
-   * Busca en mensajes, errores y metadatos
+   * Búsqueda libre
    */
   @IsOptional()
   @IsString({ message: 'El texto de búsqueda debe ser una cadena válida' })
   search?: string;
 
   /**
-   * Orden de los resultados
-   * Valores: asc, desc (por defecto desc)
+   * Orden asc/desc
    */
   @IsOptional()
   @IsEnum(['asc', 'desc'], { message: 'El orden debe ser asc o desc' })
@@ -109,10 +104,16 @@ export class LogsQueryDto {
   sortOrder?: 'asc' | 'desc' = 'desc';
 
   /**
-   * Filtro por dirección IP específica
-   * Para análisis de seguridad y accesos
+   * Filtro por IP
    */
   @IsOptional()
   @IsString({ message: 'La IP debe ser una cadena válida' })
   ip?: string;
+
+  /**
+   * Campo de ordenación
+   */
+  @IsOptional()
+  @IsString({ message: 'El campo de ordenación debe ser una cadena válida' })
+  sortBy?: string = 'createdAt';
 }

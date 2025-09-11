@@ -38,8 +38,11 @@ export enum LogAction {
   ACCESS_LOGS = 'access_logs',
   PARKING_OCUPATION = 'parking_ocupation',
   ROLE_CHANGE = 'role_change',
-  SYSTEM_ERROR = 'system_error'
+  SYSTEM_ERROR = 'system_error',
+  FINISH_RESERVATION = 'finish_reservation'
 }
+
+export type LogActionFilter = LogAction | 'reserva_actions';
 
 /**
  * Subdocumento que contiene información contextual de la petición HTTP

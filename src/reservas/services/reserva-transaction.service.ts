@@ -1,5 +1,5 @@
 // src/reservas/services/reserva-transaction.service.ts
-import { Injectable, Logger, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { Reserva, EstadoReservaDTO } from '../../entities/reserva.entity';
@@ -31,7 +31,7 @@ export class ReservaTransactionService {
    * Garantiza consistencia de datos y rollback automático en caso de error
    * 
    * @param createReservaDto - Datos de la reserva a crear
-   * @param _currentUser - Usuario autenticado que realiza la operación
+   * @param currentUser - Usuario autenticado que realiza la operación
    * @returns Reserva creada con relaciones completas
    */
   async createReservaWithTransaction(
@@ -205,61 +205,89 @@ export class ReservaTransactionService {
   }
 
   /**
-   * Cancelar reserva con transacción
-   * Similar a finalizar pero marca como cancelada
+   * ✅ CORREGIDO: Cancelar reserva con transacción
+   * Soluciona el error "FOR UPDATE cannot be applied to the nullable side of an outer join"
+   * Separando el bloqueo pesimista de las consultas con LEFT JOIN
    * 
    * @param reservaId - ID de la reserva a cancelar
-   * @param currentUser - Usuario que realiza la cancelación
+   * @param usuarioId - ID del usuario que realiza la cancelación
    * @returns Reserva cancelada
    */
-  async cancelarReservaWithTransaction(reservaId: string, currentUser: any): Promise<Reserva> {
+  async cancelarReservaWithTransaction(reservaId: string, usuarioId: string): Promise<Reserva> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      this.logger.log(`Cancelando reserva: ${reservaId} por usuario ${currentUser.userId}`);
+      this.logger.log(`Cancelando reserva: ${reservaId} por usuario ${usuarioId}`);
 
-      // 1. Obtener reserva con bloqueo
-      const reserva = await queryRunner.manager.findOne(Reserva, {
-        where: { id: reservaId },
-        relations: ['usuario', 'plaza', 'vehiculo'],
-        lock: { mode: 'pessimistic_write' }
-      });
+      // ✅ PASO 1: Primero bloquear solo la fila de la reserva (sin JOINs)
+      const reservaParaBloqueo = await queryRunner.manager
+        .createQueryBuilder(Reserva, 'reserva')
+        .where('reserva.id = :reservaId', { reservaId })
+        .setLock('pessimistic_write') // Esto genera FOR UPDATE solo en la tabla principal
+        .getOne();
 
-      if (!reserva) {
-        throw new NotFoundException('Reserva no encontrada');
+      if (!reservaParaBloqueo) {
+        throw new NotFoundException(`Reserva con ID ${reservaId} no encontrada`);
       }
 
-      if (reserva.estado !== EstadoReservaDTO.ACTIVA) {
-        throw new BadRequestException('Solo se pueden cancelar reservas activas');
+      // ✅ PASO 2: Verificar permisos del usuario
+      if (reservaParaBloqueo.usuario_id !== usuarioId) {
+        throw new ForbiddenException('No tienes permisos para cancelar esta reserva');
       }
 
-      // 2. Validar permisos
-      if (currentUser.role !== UserRole.ADMIN && reserva.usuario.id !== currentUser.userId) {
-        throw new BadRequestException('Solo puedes cancelar tus propias reservas');
+      // ✅ PASO 3: Verificar que la reserva se pueda cancelar
+      if (reservaParaBloqueo.estado !== EstadoReservaDTO.ACTIVA) {
+        throw new BadRequestException(`No se puede cancelar una reserva en estado ${reservaParaBloqueo.estado}`);
       }
 
-      // 3. Actualizar estado de reserva
-      await queryRunner.manager.update(Reserva, reservaId, {
-        estado: EstadoReservaDTO.CANCELADA
-      });
+      // ✅ PASO 4: Obtener los datos completos con JOINs (sin FOR UPDATE)
+      const reservaCompleta = await queryRunner.manager
+        .createQueryBuilder(Reserva, 'reserva')
+        .leftJoinAndSelect('reserva.usuario', 'usuario')
+        .leftJoinAndSelect('reserva.plaza', 'plaza') 
+        .leftJoinAndSelect('reserva.vehiculo', 'vehiculo')
+        .where('reserva.id = :reservaId', { reservaId })
+        .getOne();
 
-      // 4. Liberar plaza
-      await queryRunner.manager.update(Plaza, reserva.plaza.id, {
-        estado: EstadoPlaza.LIBRE
-      });
+      if (!reservaCompleta) {
+        throw new NotFoundException(`Error al obtener datos completos de la reserva ${reservaId}`);
+      }
 
-      // 5. Confirmar transacción
+      // ✅ PASO 5: Actualizar el estado de la reserva
+      await queryRunner.manager
+        .createQueryBuilder()
+        .update(Reserva)
+        .set({ 
+          estado: EstadoReservaDTO.CANCELADA,
+          updated_at: new Date()
+        })
+        .where('id = :reservaId', { reservaId })
+        .execute();
+
+      // ✅ PASO 6: Liberar la plaza
+      if (reservaCompleta.plaza) {
+        await queryRunner.manager
+          .createQueryBuilder()
+          .update(Plaza)
+          .set({ 
+            estado: EstadoPlaza.LIBRE
+          })
+          .where('id = :plazaId', { plazaId: reservaCompleta.plaza.id })
+          .execute();
+      }
+
+      // 7. Confirmar transacción
       await queryRunner.commitTransaction();
 
-      // 6. Recargar datos actualizados
+      // 8. Recargar datos actualizados
       const reservaCancelada = await this.reservaRepository.findOne({
         where: { id: reservaId },
         relations: ['usuario', 'plaza', 'vehiculo']
       });
 
-      this.logger.log(`Reserva cancelada exitosamente: ${reservaId} - Plaza ${reserva.plaza.numero_plaza} liberada`);
+      this.logger.log(`Reserva cancelada exitosamente: ${reservaId} - Plaza ${reservaCompleta.plaza?.numero_plaza} liberada`);
 
       return reservaCancelada!;
 
@@ -272,7 +300,7 @@ export class ReservaTransactionService {
     }
   }
 
-    // MÉTODOS PRIVADOS DE VALIDACIÓN
+  // MÉTODOS PRIVADOS DE VALIDACIÓN
 
   /**
    * Validar que el usuario existe y está activo
@@ -310,6 +338,7 @@ export class ReservaTransactionService {
 
     return plaza;
   }
+
   /**
    * Validar que el vehículo existe y pertenece al usuario
    */
