@@ -143,7 +143,7 @@ export class Log extends Document {
    */
   @Prop({ 
     required: true,
-    enum: LogAction 
+    enum: Object.values(LogAction) 
   })
   action: LogAction;
 

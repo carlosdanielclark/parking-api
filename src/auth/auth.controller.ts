@@ -60,6 +60,7 @@ export class AuthController {
       this.logger.log(`Login exitoso para usuario: ${result.user.email} (${result.user.role})`);
       
       return {
+        success: true,
         message: 'Login exitoso',
         data: result,
       };

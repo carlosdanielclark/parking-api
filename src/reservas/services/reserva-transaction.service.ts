@@ -45,12 +45,12 @@ export class ReservaTransactionService {
     try {
       const { usuario_id, plaza_id, vehiculo_id, fecha_inicio, fecha_fin } = createReservaDto;
 
-      // Validación coherente con ReservasService
+      // Mantener validación coherente con ReservasService (doble check defensivo)
       if (currentUser.userId !== usuario_id) {
         throw new BadRequestException('No puede crear reservas para otros usuarios');
       }
 
-      // 1. Validar vehículo
+      // 1. Validar vehículo (pertenencia y existencia)
       const vehiculo = await queryRunner.manager.findOne(Vehiculo, {
         where: { id: vehiculo_id, usuario_id },
         relations: ['usuario']
@@ -59,16 +59,19 @@ export class ReservaTransactionService {
         throw new BadRequestException('El vehículo especificado no existe o no pertenece al usuario');
       }
 
-      // 2. Validar plaza existe y está ACTIVA con lock
+      // 2. Validar plaza existe y está LIBRE con lock pesimista
+      // EDITADO: Unificar a BadRequestException('La plaza no está disponible') para caso de indisponibilidad
       const plaza = await queryRunner.manager.findOne(Plaza, {
-        where: { id: plaza_id, estado: EstadoPlaza.ACTIVA },
+        where: { id: plaza_id, estado: EstadoPlaza.LIBRE },
         lock: { mode: 'pessimistic_write' }
       });
       if (!plaza) {
-        throw new NotFoundException('Plaza no encontrada o no disponible');
+        // EDITADO: El test de concurrencia espera un 400 cuando la plaza se ocupa concurrentemente
+        throw new BadRequestException('La plaza no está disponible');
       }
 
-      // 3. Verificar solapamiento de reservas existentes
+      // 3. Verificar solapamiento de reservas existentes en la misma plaza (bloqueo pesimista)
+      // EDITADO: Mantener setLock('pessimistic_write') para asegurar consistencia bajo concurrencia
       const solapamiento = await queryRunner.manager
         .createQueryBuilder(Reserva, 'reserva')
         .setLock('pessimistic_write')
@@ -99,7 +102,7 @@ export class ReservaTransactionService {
         throw new BadRequestException('El vehículo ya tiene una reserva activa en el período solicitado');
       }
 
-      // 5. Crear reserva
+      // 5. Crear reserva (persistencia atómica)
       const nuevaReserva = queryRunner.manager.create(Reserva, {
         usuario_id,
         plaza_id,
@@ -111,12 +114,13 @@ export class ReservaTransactionService {
 
       const reservaGuardada = await queryRunner.manager.save(nuevaReserva);
 
-      // 6. Actualizar estado de plaza
+      // 6. Actualizar estado de plaza a OCUPADA dentro de la misma transacción
       await queryRunner.manager.update(Plaza, plaza_id, { estado: EstadoPlaza.OCUPADA });
 
+      // 7. Confirmar transacción
       await queryRunner.commitTransaction();
 
-      // 7. Retornar reserva con relaciones completas
+      // 8. Retornar reserva con relaciones completas (fuera de la transacción)
       const reservaCompleta = await this.dataSource.getRepository(Reserva).findOne({
         where: { id: reservaGuardada.id },
         relations: ['usuario', 'plaza', 'vehiculo'],
@@ -137,9 +141,6 @@ export class ReservaTransactionService {
       await queryRunner.release();
     }
   }
-
-
-
 
   /**
    * Finalizar reserva con transacción
@@ -271,7 +272,7 @@ export class ReservaTransactionService {
     }
   }
 
-  // MÉTODOS PRIVADOS DE VALIDACIÓN
+    // MÉTODOS PRIVADOS DE VALIDACIÓN
 
   /**
    * Validar que el usuario existe y está activo
@@ -298,18 +299,17 @@ export class ReservaTransactionService {
     });
 
     if (!plaza) {
-      throw new BadRequestException('Plaza no encontrada');
+      // EDITADO: Unificar semántica de indisponibilidad
+      throw new BadRequestException('La plaza no está disponible');
     }
 
     if (plaza.estado !== EstadoPlaza.LIBRE) {
-      throw new BadRequestException(
-        `La plaza ${plaza.numero_plaza} no está disponible (estado: ${plaza.estado})`
-      );
+      // EDITADO: Homologar mensaje y tipo de error
+      throw new BadRequestException('La plaza no está disponible');
     }
 
     return plaza;
   }
-
   /**
    * Validar que el vehículo existe y pertenece al usuario
    */

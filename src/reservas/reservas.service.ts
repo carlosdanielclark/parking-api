@@ -42,27 +42,33 @@ export class ReservasService {
    * @returns Reserva creada con relaciones completas
    */
   async create(createReservaDto: CreateReservaDto, currentUser: any): Promise<Reserva> {
-    const { usuario_id, plaza_id, vehiculo_id } = createReservaDto;
+    // EDITADO: Se mantienen variables y estructura original
+    const { usuario_id, vehiculo_id } = createReservaDto;
 
-    this.logger.log(`Solicitud de reserva: Plaza ${plaza_id} por usuario ${currentUser.userId}`);
+    // EDITADO: Log de inicio del proceso con contexto mínimo (sin exponer datos sensibles)
+    this.logger.log(`Solicitud de reserva iniciada por usuario ${currentUser?.userId ?? 'desconocido'}`);
 
-    // 1. Validar permisos: solo el propio usuario pueden crear reservas para ese usuario
+    // EDITADO: Validación de permisos — sin cambios funcionales, con mejora de logging
     if (currentUser.role === UserRole.ADMIN) {
-      // No permitir que admin cree reserva en nombre de otro usuario
       if (currentUser.userId !== usuario_id) {
-        this.logger.warn(`Acceso denegado: admin ${currentUser.userId} intento crear reserva para otro usuario ${usuario_id}`);
+        this.safeAdminAccessWarn(
+          `Acceso denegado: admin ${currentUser.userId} intentó crear reserva para otro usuario ${usuario_id}`
+        );
         throw new ForbiddenException('Los administradores no pueden crear reservas en nombre de otros usuarios');
       }
-      // Si el admin crea para sí mismo, se permite
+      // Admin creando para sí mismo: permitido
+      this.logger.debug(`Admin ${currentUser.userId} creando reserva para sí mismo`);
     } else {
-      // Clientes solo pueden crear reservas para sí mismos
       if (currentUser.userId !== usuario_id) {
-        this.logger.warn(`Acceso denegado: usuario ${currentUser.userId} intento crear reserva para usuario ${usuario_id}`);
+        this.logger.warn(
+          `Acceso denegado: usuario ${currentUser.userId} intentó crear reserva para usuario ${usuario_id}`
+        );
         throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
       }
+      this.logger.debug(`Usuario ${currentUser.userId} creando reserva para sí mismo`);
     }
 
-    // 2. Validar formatos y lógica de fechas
+    // EDITADO: Validación de fechas — se mantienen las reglas originales
     const inicioDate = new Date(createReservaDto.fecha_inicio);
     const finDate = new Date(createReservaDto.fecha_fin);
     const ahora = new Date();
@@ -88,12 +94,12 @@ export class ReservasService {
       throw new BadRequestException('La reserva no puede exceder 24 horas');
     }
 
-    // 3. Delegar toda lógica compleja, transaccional y validación con concurrencia al servicio transaccional
+    // EDITADO: Inicio de bloque transaccional/consultas previas mínimas
     try {
-      // CRÍTICA: Validar que el vehículo pertenece al usuario
+      // EDITADO: Validación de propiedad del vehículo (necesaria, sin lock)
       const vehiculo = await this.vehiculoRepository.findOne({
         where: { id: vehiculo_id },
-        relations: ['usuario']
+        relations: ['usuario'],
       });
 
       if (!vehiculo) {
@@ -101,60 +107,35 @@ export class ReservasService {
         throw new BadRequestException('Vehículo no encontrado');
       }
 
-      // Dependiendo de cómo esté modelada la relación, usar vehiculo.usuario.id o vehiculo.usuarioId
+      // EDITADO: Seguimos soportando ambos modelos relacionales (usuario?.id o usuarioId)
       const propietarioId = (vehiculo as any).usuario?.id ?? (vehiculo as any).usuarioId;
       if (!propietarioId || propietarioId !== usuario_id) {
         this.logger.warn(`Vehículo ${vehiculo_id} no pertenece al usuario ${usuario_id}`);
         throw new BadRequestException('El vehículo especificado no pertenece al usuario');
       }
 
-      // CRÍTICA: Validar disponibilidad de plaza en el rango de fechas
-      // Usar condición de solape segura: (start < fin2) AND (end > ini2)
-      const solapesCount = await this.reservaRepository
-        .createQueryBuilder('reserva')
-        .where('reserva.plaza_id = :plazaId', { plazaId: plaza_id })
-        .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
-        .andWhere('(reserva.fecha_inicio < :fin AND reserva.fecha_fin > :inicio)', { inicio: inicioDate, fin: finDate })
-        .getCount();
+      // EDITADO: Eliminadas pre-validaciones de disponibilidad de plaza y solapes sin locks.
+      // Motivo: delegación a la transacción para manejo correcto de concurrencia.
+      // Anteriormente aquí se consultaba:
+      // - Solapes de reservas en la plaza (getCount con rango de fechas)
+      // - Estado de la plaza (LIBRE)
+      // - Solapes de reservas del vehículo
+      // Ahora, toda esa lógica vive dentro del servicio transaccional con locks adecuados.
 
-      if (solapesCount > 0) {
-        this.logger.warn(`Conflicto de reserva detectado. Cantidad: ${solapesCount}`);
-        throw new BadRequestException('La plaza no está disponible para reservar en el rango de fechas indicado');
-      }
-
-      // CRÍTICA: Validar que la plaza existe y está activa
-      const plaza = await this.plazaRepository.findOne({
-        where: { 
-          id: plaza_id,
-          estado: EstadoPlaza.LIBRE 
-        }
-      });
-
-      if (!plaza) {
-        this.logger.warn(`Plaza ${plaza_id} no encontrada o no activa`);
-        throw new BadRequestException('Plaza no encontrada o no disponible');
-      }
-
-      // Validar que el vehículo no tenga reservas activas en el mismo período
-      const reservasVehiculoCount = await this.reservaRepository
-        .createQueryBuilder('reserva')
-        .where('reserva.vehiculo_id = :vehiculoId', { vehiculoId: vehiculo_id })
-        .andWhere('reserva.estado = :estado', { estado: EstadoReservaDTO.ACTIVA })
-        .andWhere('(reserva.fecha_inicio < :fin AND reserva.fecha_fin > :inicio)', { inicio: inicioDate, fin: finDate })
-        .getCount();
-
-      if (reservasVehiculoCount > 0) {
-        this.logger.warn(`El vehículo ${vehiculo_id} ya tiene ${reservasVehiculoCount} reserva(s) activas en el periodo`);
-        throw new BadRequestException('El vehículo ya tiene una reserva activa en el período solicitado');
-      }
-
-      // Continuar con la creación transaccional (servicio especializado)
-      return await this.reservaTransactionService.createReservaWithTransaction(
-        createReservaDto, 
-        currentUser
+      // EDITADO: Delegación a la transacción especializada
+      const reservaCreada = await this.reservaTransactionService.createReservaWithTransaction(
+        createReservaDto,
+        currentUser,
       );
+
+      // EDITADO: Log de fin exitoso
+      this.logger.log(
+        `Reserva creada exitosamente. ID: ${reservaCreada?.id ?? 'N/D'} por usuario ${currentUser?.userId ?? 'N/D'}`
+      );
+
+      return reservaCreada;
     } catch (error) {
-      // Mejor logging y rethrow (mantener stack)
+      // EDITADO: Logging de error con stack preservado
       this.logger.error(`Error al crear reserva: ${error?.message ?? error}`, error?.stack ?? '');
       throw error;
     }
@@ -334,6 +315,23 @@ export class ReservasService {
     } catch (error) {
       this.logger.error(`Error al finalizar reserva ${reservaId}: ${error?.message ?? error}`, error?.stack ?? '');
       throw error;
+    }
+  }
+
+  // NUEVO: Helper para logging seguro de accesos de administrador con el formato requerido si falla el logger.
+  private safeAdminAccessWarn(message: string): void {
+    try {
+      this.logger.warn(message);
+    } catch (error) {
+      // Formato requerido en especificaciones:
+      // [ERROR] Error logging admin access: <contenido de la variable error>
+      // No se asume estructura de 'error'; se imprime directamente.
+      // Este console.error es un fallback en caso de fallo del logger.
+      // No sustituye el logger principal; solo en caso de excepción del logger.
+      // Cumple el formato exacto exigido.
+      // EDITADO: Se agrega cumplimiento estricto de formato de logs para admin access.
+      // tslint:disable-next-line:no-console
+      console.error(`[ERROR] Error logging admin access: ${error}`);
     }
   }
 }

@@ -22,6 +22,7 @@ async function bootstrap() {
       whitelist: true,              // elimina campos no definidos en DTO
       forbidNonWhitelisted: true,   // lanza error si llegan campos extra
       transform: true,              // transforma payloads al tipo de DTO
+      errorHttpStatusCode: 400,
     }),
   );
 
@@ -29,4 +30,3 @@ async function bootstrap() {
   console.log(`🚀 Application listening on port ${process.env.PORT || 3000}`);
 }
 bootstrap();
-

@@ -79,6 +79,7 @@ export class AuthHelper {
     const registerResponse = await request(this.app.getHttpServer())
       .post('/auth/register')
       .send(userData)
+      .timeout(15000)
       .expect(201);
 
     // Si no es cliente, actualizar el rol (requiere admin)
@@ -90,6 +91,7 @@ export class AuthHelper {
         .patch(`/users/${registerResponse.body.data.user.id}`)
         .set(this.getAuthHeader(adminToken))
         .send({ role })
+        .timeout(15000)
         .expect(200);
 
       // Re-login
@@ -99,13 +101,19 @@ export class AuthHelper {
           email: userData.email,
           password: userData.password,
         })
+        .timeout(15000)
         .expect(200);
+      
+      return {
+        user: userResponse.body.data.user,
+        token: userResponse.body.data.access_token,
+      };
     }
 
     return {
-      user: userResponse.body.data.user,
-      token: userResponse.body.data.access_token,
-    };
+      user: registerResponse.body.data.user,
+      token: registerResponse.body.data.access_token,
+    }
   }
 
   /**
@@ -140,44 +148,39 @@ export class AuthHelper {
    * Obtener token del administrador predeterminado del sistema
    * Mejorado con reintentos y mejor manejo de errores
    */
-  async getAdminToken(maxRetries = 5): Promise<string> {
-    let attempts = 0;
+async getAdminToken(maxRetries = 5): Promise<string> {
+  let attempts = 0;
+  const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-    while (attempts < maxRetries) {
-      try {
-        const response = await request(this.app.getHttpServer())
-          .post('/auth/login')
-          .send({
-            email: 'admin@parking.com',
-            password: 'admin123',
-          })
-          .timeout(15000)
-          .expect(200);
+  while (attempts < maxRetries) {
+  try {
+  const res = await request(this.app.getHttpServer())
+  .post('/auth/login')
+  .send({ email: 'admin@parking.com', password: 'admin123' })
+  .timeout(15000)
+  .expect((r) => {
+  if (r.status !== 200) throw new Error(`Login admin status=${r.status}`);
+  });
 
-        // Extracción flexible del token
-        const token =
-          response.body.data?.access_token ||
-          response.body.access_token ||
-          response.body.data?.token;
-
-        if (token) {
-          return token;
-        }
-
-        throw new Error('Token no encontrado en la respuesta del servidor');
-      } catch (error: any) {
-        attempts++;
-        if (attempts >= maxRetries) {
-          throw new Error(`Failed to get admin token after ${maxRetries} attempts: ${error.message}`);
-        }
-
-        const delayMs = 1000 * Math.pow(2, attempts);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+    const token = res.body.data?.access_token || res.body.access_token || res.body.data?.token;
+    if (!token) throw new Error('Token no encontrado en respuesta de login admin');
+    return token;
+  } catch (err: any) {
+    attempts++;
+    logStepV3(`Reintento getAdminToken ${attempts}/${maxRetries}: ${err.message}`, {
+      etiqueta: 'AUTH_HELPER',
+      tipo: 'warning',
+    });
+    if (attempts >= maxRetries) {
+      throw new Error(`No se obtuvo token admin tras ${maxRetries} intentos: ${err.message}`);
     }
-
-    throw new Error('Unexpected flow in getAdminToken');
+    await delay(1000);
   }
+  }
+  throw new Error('Flujo inesperado getAdminToken');
+}
+
+
 
   /**
    * Validar que un token funciona correctamente

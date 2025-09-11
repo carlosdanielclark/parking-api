@@ -22,7 +22,7 @@ import { UserRole } from '../../entities/user.entity';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { LoggingService } from '../../logging/logging.service';
-import { LogLevel } from '../../schemas/log.schema';
+import { LogAction, LogLevel } from '../../schemas/log.schema';
 
 /**
  * Controlador para endpoints administrativos de logs
@@ -66,7 +66,7 @@ export class AdminLogsController {
       return {
         success: true,
         message: 'Logs obtenidos exitosamente',
-        data: result.logs,
+        logs: result.logs,
         pagination: result.pagination,
         summary: result.summary,
         filters: result.filters,
@@ -77,9 +77,11 @@ export class AdminLogsController {
       this.logger.error(`Error en consulta de logs: ${error.message}`, error.stack);
       
       // Registrar error para auditoría
+      /*
+      comentar el loggingService.log dentro de getLogs si se conserva middleware
       await this.loggingService.log(
-        LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+          LogLevel.ERROR,
+          LogAction.SYSTEM_ERROR,
         `Error en consulta administrativa de logs: ${error.message}`,
         currentUser.userId,
         'admin_logs',
@@ -87,6 +89,7 @@ export class AdminLogsController {
         { error: error.message, queryParams: queryDto },
         { method: 'GET', resource_type: 'admin_logs_error' }
       );
+      */
       
       throw error;
     }
@@ -120,7 +123,7 @@ export class AdminLogsController {
       // Registrar acceso a estadísticas
       await this.loggingService.log(
         LogLevel.INFO,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Administrador accedió a estadísticas de logs`,
         currentUser.userId,
         'log_statistics',
@@ -147,7 +150,7 @@ export class AdminLogsController {
       
       await this.loggingService.log(
         LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+        LogAction.SYSTEM_ERROR,
         `Error obteniendo estadísticas de logs: ${error.message}`,
         currentUser.userId,
         'log_statistics',
@@ -188,7 +191,7 @@ export class AdminLogsController {
       // Registrar acceso a eventos críticos
       await this.loggingService.log(
         LogLevel.WARN,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Administrador consultó eventos críticos del sistema`,
         currentUser.userId,
         'critical_events',
@@ -216,7 +219,7 @@ export class AdminLogsController {
       
       await this.loggingService.log(
         LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+        LogAction.SYSTEM_ERROR,
         `Error obteniendo eventos críticos: ${error.message}`,
         currentUser.userId,
         'critical_events',
@@ -255,7 +258,7 @@ export class AdminLogsController {
       // Registrar intento de exportación (operación crítica)
       await this.loggingService.log(
         LogLevel.WARN,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Administrador inició exportación de logs del sistema`,
         currentUser.userId,
         'log_export',
@@ -291,7 +294,7 @@ export class AdminLogsController {
       // Registrar exportación exitosa
       await this.loggingService.log(
         LogLevel.INFO,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Exportación de logs completada exitosamente`,
         currentUser.userId,
         'log_export',
@@ -319,7 +322,7 @@ export class AdminLogsController {
       // Registrar error de exportación
       await this.loggingService.log(
         LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+        LogAction.SYSTEM_ERROR,
         `Error en exportación de logs: ${error.message}`,
         currentUser.userId,
         'log_export',
@@ -399,7 +402,7 @@ export class AdminLogsController {
       // Registrar verificación de salud
       await this.loggingService.log(
         LogLevel.INFO,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Verificación de salud del sistema de logs`,
         currentUser.userId,
         'system_health',
@@ -423,7 +426,7 @@ export class AdminLogsController {
       
       await this.loggingService.log(
         LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+        LogAction.SYSTEM_ERROR,
         `Error en verificación de salud del sistema: ${error.message}`,
         currentUser.userId,
         'system_health',

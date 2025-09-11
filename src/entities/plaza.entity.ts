@@ -45,7 +45,7 @@ export class Plaza {
    */
   @Column({ 
     type: 'varchar', 
-    length: 5, 
+    length: 10, 
     unique: true,
     comment: 'Número único identificativo de la plaza'
   })

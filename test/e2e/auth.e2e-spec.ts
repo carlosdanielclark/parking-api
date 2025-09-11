@@ -18,10 +18,11 @@ describe('Auth E2E Test', () => {
   it('successful login returns JWT token', () => {
     return request(app.getHttpServer())
       .post('/auth/login')
-      .send({ email: 'admin@example.com', password: 'password' })
-      .expect(201)
+      .send({ email: 'admin@parking.com', password: 'admin123' })
+      .expect(200)
       .expect(res => {
-        expect(res.body.access_token).toBeDefined();
+        expect(res.body.data).toBeDefined();
+        expect(res.body.data.access_token).toBeDefined();
       });
   });
 

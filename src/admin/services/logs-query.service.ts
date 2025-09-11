@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Log, LogLevel } from '../../schemas/log.schema';
+import { Log, LogAction, LogLevel } from '../../schemas/log.schema';
 import { LogsQueryDto } from '../dto/logs-query.dto';
 import { LoggingService } from '../../logging/logging.service';
 
@@ -61,7 +61,7 @@ export class LogsQueryService {
       // Registrar acceso a logs para auditoría
       await this.loggingService.log(
         LogLevel.INFO,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Administrador consultó logs del sistema`,
         adminUserId,
         'logs',
@@ -106,7 +106,7 @@ export class LogsQueryService {
       this.logger.error(`Error en consulta de logs: ${error.message}`, error.stack);
       await this.loggingService.log(
         LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+        LogAction.SYSTEM_ERROR,
         `Error en consulta de logs administrativos: ${error.message}`,
         adminUserId,
         'logs',
@@ -336,8 +336,8 @@ export class LogsQueryService {
           $or: [
             { level: LogLevel.ERROR },
             { 'context.critical_operation': true },
-            { action: 'ROLE_CHANGE' },
-            { action: 'DELETE_USER' },
+            { action: LogAction.ROLE_CHANGE },
+            { action: LogAction.DELETE_USER },
           ],
         })
         .sort({ createdAt: -1 })

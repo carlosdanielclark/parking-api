@@ -1,6 +1,5 @@
-import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { Module/*, MiddlewareConsumer */} from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Controladores
 import { AdminLogsController } from './controllers/admin-logs.controller';
@@ -9,14 +8,12 @@ import { AdminLogsController } from './controllers/admin-logs.controller';
 import { LogsQueryService } from './services/logs-query.service';
 import { LogsExportService } from './services/logs-export.service';
 
-// Servicios compartidos
-import { LoggingService } from '../logging/logging.service';
-
 // Esquemas y entidades
 import { Log, LogSchema } from '../schemas/log.schema';
-
-
 import { LoggingModule } from '../logging/logging.module';
+
+// Middlewares
+import { AuditMiddleware } from './middleware/audit-middleware';
 
 /**
  * Módulo administrativo para gestión de logs del sistema
@@ -40,4 +37,9 @@ import { LoggingModule } from '../logging/logging.module';
   providers: [LogsQueryService, LogsExportService],
   exports: [LogsQueryService, LogsExportService],
 })
-export class AdminModule {}
+export class AdminModule {
+    /*configure(consumer: MiddlewareConsumer) {
+    // EDITADO: aplicar middleware solo a rutas admin/logs
+    consumer.apply(AuditMiddleware).forRoutes('admin/logs');
+  }*/
+}

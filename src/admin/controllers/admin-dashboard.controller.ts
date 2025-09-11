@@ -13,7 +13,7 @@ import { User } from '../../entities/user.entity';
 import { Reserva, EstadoReservaDTO } from '../../entities/reserva.entity';
 import { Plaza, EstadoPlaza } from '../../entities/plaza.entity';
 import { LoggingService } from '../../logging/logging.service';
-import { LogLevel } from '../../schemas/log.schema';
+import { LogAction, LogLevel } from '../../schemas/log.schema';
 import { MoreThan } from 'typeorm';
 
 /**
@@ -150,7 +150,7 @@ export class AdminDashboardController {
 
       await this.loggingService.log(
         LogLevel.INFO,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Administrador accedió al dashboard principal`,
         currentUser.userId,
         'admin_dashboard',
@@ -176,7 +176,7 @@ export class AdminDashboardController {
 
       await this.loggingService.log(
         LogLevel.ERROR,
-        'SYSTEM_ERROR' as any,
+        LogAction.SYSTEM_ERROR,
         `Error generando dashboard administrativo: ${error.message}`,
         currentUser.userId,
         'admin_dashboard',

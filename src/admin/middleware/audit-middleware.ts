@@ -1,7 +1,7 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { LoggingService } from '../../logging/logging.service';
-import { LogLevel } from '../../schemas/log.schema';
+import { LogAction, LogLevel } from '../../schemas/log.schema';
 
 /**
  * Middleware de auditoría para operaciones administrativas sensibles
@@ -129,7 +129,7 @@ export class AuditMiddleware implements NestMiddleware {
       
       await this.loggingService.log(
         isSuccessful ? LogLevel.INFO : LogLevel.WARN,
-        'ACCESS_LOGS' as any,
+        LogAction.ACCESS_LOGS,
         `Acceso administrativo: ${adminAction}`,
         user?.userId || 'unknown',
         'admin_panel',
@@ -163,7 +163,7 @@ export class AuditMiddleware implements NestMiddleware {
       if (this.isHighPrivilegeAction(adminAction)) {
         await this.loggingService.log(
           LogLevel.WARN,
-          'ACCESS_LOGS' as any,
+          LogAction.ACCESS_LOGS,
           `Operación administrativa de alta sensibilidad ejecutada`,
           user?.userId || 'unknown',
           'high_privilege_operation',
@@ -241,4 +241,3 @@ export class AuditMiddleware implements NestMiddleware {
     return highPrivilegeActions.includes(action);
   }
 }
-

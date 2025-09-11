@@ -4,7 +4,7 @@ import { AdminLogsController } from './controllers/admin-logs.controller';
 import { LogsQueryService } from './services/logs-query.service';
 import { LogsExportService } from './services/logs-export.service';
 import { LoggingService } from '../logging/logging.service';
-import { LogLevel } from '../schemas/log.schema';
+import { LogAction, LogLevel } from '../schemas/log.schema';
 import { Log } from '../schemas/log.schema'; // Importa tu modelo Log para instanciar objetos reales
 
 /**
@@ -118,7 +118,7 @@ describe('AdminLogsController', () => {
 
       expect(loggingService.log).toHaveBeenCalledWith(
         LogLevel.ERROR,
-        'SYSTEM_ERROR',
+        LogAction.SYSTEM_ERROR,
         expect.stringContaining('Error en consulta administrativa de logs'),
         mockUser.userId,
         'admin_logs',
@@ -189,7 +189,7 @@ describe('AdminLogsController', () => {
       expect(logsQueryService.getLogStatistics).toHaveBeenCalledWith(days);
       expect(loggingService.log).toHaveBeenCalledWith(
         LogLevel.INFO,
-        'ACCESS_LOGS',
+        LogAction.ACCESS_LOGS,
         expect.stringContaining('estadísticas'),
         mockUser.userId,
         'log_statistics',
@@ -213,7 +213,7 @@ describe('AdminLogsController', () => {
         new Log({
           _id: '507f1f77bcf86cd799439012',
           level: LogLevel.ERROR,
-          action: 'SYSTEM_ERROR',
+          action: LogAction.SYSTEM_ERROR,
           message: 'Database connection failed',
           createdAt: new Date(),
         }),
@@ -238,7 +238,7 @@ describe('AdminLogsController', () => {
         new Log({
           _id: '507f1f77bcf86cd799439012',
           level: LogLevel.ERROR,
-          action: 'SYSTEM_ERROR',
+          action: LogAction.SYSTEM_ERROR,
           message: 'Error',
           createdAt: new Date(),
         }),
@@ -404,7 +404,7 @@ describe('AdminLogsController', () => {
         new Log({
           _id: '507f1f77bcf86cd799439012',
           level: LogLevel.ERROR,
-          action: 'SYSTEM_ERROR',
+          action: LogAction.SYSTEM_ERROR,
           message: 'Error',
           createdAt: new Date(),
         }),

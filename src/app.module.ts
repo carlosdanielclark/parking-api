@@ -167,7 +167,6 @@ import { AdminModule } from './admin/admin.module';
      * Módulo de autenticación y autorización
      * Configura JWT, Passport y servicios de autenticación
      */
-    MongooseModule.forRoot(getEnvString('MONGO_URI')),
     AuthModule,
     UsersModule,
     PlazasModule,

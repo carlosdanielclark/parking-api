@@ -15,9 +15,9 @@ export class CreatePlazaDto {
    * Debe ser único en todo el sistema (ej: "A001", "B015", "C-025")
    * Campo requerido para identificación física de la plaza
    */
-  @ApiProperty({ example: 12, description: 'Número visible de plaza' })
+  @ApiProperty({ example: 'A001', description: 'Número visible de plaza (único)' })
   @IsString({ message: 'numero_plaza debe ser una cadena de texto' })
-  @MaxLength(5, {message: 'numero_plaza: máx 5 caracteres' })
+  @MaxLength(10, { message: 'numero_plaza: máx 10 caracteres' })
   numero_plaza: string;
   /**
    * Descripción de la ubicación física de la plaza (opcional)
