@@ -13,7 +13,7 @@ export enum LogLevel {
   DEBUG = 'debug',
 }
 
-export enum LogAction {
+export enum LoggingAction {
   LOGIN = 'login',
   LOGOUT = 'logout',
   REGISTER = 'register',

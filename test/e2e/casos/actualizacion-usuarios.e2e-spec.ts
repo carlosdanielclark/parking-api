@@ -3,22 +3,23 @@ import request from 'supertest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
-import { AuthHelper, AuthenticatedUser } from '../../helpers/auth-helper';
-import { DataFixtures } from '../../helpers/data-fixtures';
 import { UserRole } from '../../../src/entities/user.entity';
-import { logStepV3 } from '../../helpers/log-util';
+import {
+  AuthHelper,
+  AuthenticatedUser,
+  DataFixtures,
+  DataGenerator,
+  HttpClient,
+  logStepV3,
+} from '../../helpers';
 
-/**
- * Tests E2E para Caso de Uso 3: Actualizar los Detalles de un Usuario
- * 
- * Cubre el flujo donde un administrador desea actualizar los detalles de un usuario,
- * como nombre, email, teléfono y rol, con las correspondientes validaciones y logging.
- */
+jest.setTimeout(60000);
+
 describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
   let app: INestApplication;
   let authHelper: AuthHelper;
-  let server: any; // referencia explícita al servidor HTTP
-  let adminToken: string;
+  let server: any;
+  let httpClient: HttpClient;
   let usuarios: {
     admin: AuthenticatedUser;
     empleado: AuthenticatedUser;
@@ -26,12 +27,19 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
   };
   let usuarioParaActualizar: AuthenticatedUser;
 
-  // NUEVO - Helper local para reintentar PATCH cuando ocurre ECONNRESET (solo para tests E2E frágiles)
-  async function patchWithRetry(server: any, url: string, token: string, body: any, expectStatus: number, maxRetries = 1, retryDelayMs = 150): Promise<any> {
+  async function patchWithRetry(
+    serverInstance: any,
+    url: string,
+    token: string,
+    body: any,
+    expectStatus: number,
+    maxRetries = 1,
+    retryDelayMs = 150
+  ): Promise<any> {
     let attempt = 0;
     while (true) {
       try {
-        const res = await request(server)
+        const res = await request(serverInstance)
           .patch(url)
           .set('Authorization', `Bearer ${token}`)
           .send(body);
@@ -39,10 +47,8 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         return res;
       } catch (err: any) {
         const msg = String(err?.message ?? err);
-        // Reintentar solo para errores de transporte TCP tipo ECONNRESET
         if (attempt < maxRetries && /ECONNRESET/i.test(msg)) {
-          // Delay pequeño antes de reintentar para mitigar condiciones de carrera en infra
-          await new Promise(r => setTimeout(r, retryDelayMs));
+          await new Promise((r) => setTimeout(r, retryDelayMs));
           attempt++;
           continue;
         }
@@ -59,175 +65,145 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
 
-    server = app.getHttpServer(); // capturar instancia
-
+    server = app.getHttpServer();
     authHelper = new AuthHelper(app);
-    // Obtener token admin una sola vez para toda la suite (evita reintentos con timers)
-    adminToken = await authHelper.getAdminToken();
-  });
-
-  // Limpieza entre casos para aislar datos y evitar colisiones
-  afterEach(async () => {
-    try {
-      const adminToken = await authHelper.getAdminToken();
-      // Opcional: eliminar usuarioParaActualizar si existe
-      if (usuarioParaActualizar?.user?.id) {
-        await request(app.getHttpServer())
-          .delete(`/users/${usuarioParaActualizar.user.id}`)
-          .set(authHelper.getAuthHeader(adminToken))
-          .catch(() => undefined);
-      }
-    } catch (error: any) {
-        logStepV3(`Intento fallido haciendo limpieza`, {
-          etiqueta: "afterEach",
-          tipo: "warning"
-        }, error.message);
-    } finally {
-      DataFixtures.clearGeneratedPlacas();
-    }
+    httpClient = new HttpClient(app);
   });
 
   beforeEach(async () => {
+    // Limpieza de estado estático para evitar colisiones
+    DataGenerator.clearStaticState();
+    DataFixtures.clearGeneratedPlazaNumbers?.();
+
     usuarios = await authHelper.createMultipleUsers();
 
-    // Crear usuario adicional para ser actualizado con email único/no colisionante
-    const uniqueSuffix = `${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 8)}`;
+    // Crear usuario único para actualizar
+    const uniqueSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     usuarioParaActualizar = await authHelper.createAndLoginUser(UserRole.CLIENTE, {
       nombre: 'Usuario Para Actualizar',
       email: `actualizar+${uniqueSuffix}@test.com`,
       telefono: '+1234567890',
     });
 
-    logStepV3(`👥 Setup completado: ${Object.keys(usuarios).length + 1} usuarios creados`, {
-      etiqueta: 'beforeEach',
-    });
+    logStepV3('👥 Setup completado', { etiqueta: 'beforeEach', tipo: 'info' });
   });
 
+  afterEach(async () => {
+    try {
+      const adminTok = await authHelper.getAdminToken();
+      if (usuarioParaActualizar?.user?.id) {
+        await request(app.getHttpServer())
+          .delete(`/users/${usuarioParaActualizar.user.id}`)
+          .set('Authorization', `Bearer ${adminTok}`)
+          .catch(() => undefined);
+      }
+    } catch (err: any) {
+      logStepV3(`Intento fallido eliminando usuario de prueba: ${err?.message ?? String(err)}`, {
+        etiqueta: 'afterEach',
+        tipo: 'warning',
+      });
+    } finally {
+      DataFixtures.clearGeneratedPlazaNumbers?.();
+    }
+  });
 
   describe('Actualización de usuarios por administrador', () => {
     it('debe permitir a un administrador actualizar cualquier campo de un usuario', async () => {
-      const datosActualizados = {
-        nombre: 'Nombre Actualizado',
-        telefono: '+9876543210',
-      };
+      const datosActualizados = { nombre: 'Nombre Actualizado', telefono: '+9876543210' };
 
-      logStepV3(`📝 Actualizando usuario ${usuarioParaActualizar.user.id}`,{
-        etiqueta: "update user - admin"
-      });
-
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send(datosActualizados)
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = datosActualizados;      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toMatchObject({
         id: usuarioParaActualizar.user.id,
         nombre: datosActualizados.nombre,
         telefono: datosActualizados.telefono,
-        email: usuarioParaActualizar.user.email, // No cambiado
+        email: usuarioParaActualizar.user.email,
       });
 
-      // Verificar que se mantuvo el email original
       expect(response.body.data.email).toBe(usuarioParaActualizar.user.email);
-      
-      logStepV3('✅ Usuario actualizado exitosamente',{
-        etiqueta: "update user - admin"
-      });
     });
 
     it('debe permitir al administrador cambiar el email de un usuario', async () => {
-      // generar email único dinámico para evitar colisiones
       const nuevoEmail = `nuevo.${Date.now().toString(36)}@test.com`;
 
-      const response = await request(server)
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ email: nuevoEmail })
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { email: nuevoEmail };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
       expect(response.body.data.email).toBe(nuevoEmail);
-      
-      // Verificar que el usuario puede hacer login con el nuevo email
-      const loginResponse = await request(server)
-        .post('/auth/login')
-        .send({
-          email: nuevoEmail,
-          password: 'cliente123', // Password original
-        })
-        .expect(200);
+
+      // Login con nuevo email
+      const loginUrl = '/auth/login';
+      const loginBody = { email: nuevoEmail, password: 'cliente123' };      
+      const loginHeader = {};
+      const loginResponse = await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+      );
 
       expect(loginResponse.body.data.access_token).toBeDefined();
-      
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: usuarioParaActualizar.user.email,
-          password: 'cliente123',
-        })
-        .expect(401);
+
+      // Login con viejo email debe fallar
+      const loginViejoBody = { email: usuarioParaActualizar.user.email, password: 'cliente123' };      
+      await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginViejoBody, loginHeader, 401), 4, 500
+      );
     });
-    
+
     it('debe permitir al administrador cambiar la contraseña de un usuario', async () => {
       const nuevaPassword = 'nueva_password_123';
 
-      await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ password: nuevaPassword })
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { password: nuevaPassword };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
-      // Verificar que el login funciona con la nueva contraseña
-      const loginResponse = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: usuarioParaActualizar.user.email,
-          password: nuevaPassword,
-        })
-        .expect(200);
+      const loginUrl = '/auth/login';
+      const loginBody = { email: usuarioParaActualizar.user.email, password: nuevaPassword };      
+      const loginHeader = {};
+      const loginResponse = await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+      );
 
       expect(loginResponse.body.data.access_token).toBeDefined();
-      
-      // Verificar que la contraseña anterior ya no funciona
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: usuarioParaActualizar.user.email,
-          password: 'cliente123', // Contraseña anterior
-        })
-        .expect(401);
+
+      const loginViejoBody = { email: usuarioParaActualizar.user.email, password: 'cliente123' };      
+      await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginViejoBody, loginHeader, 401), 4, 500
+      );
     });
 
     it('debe registrar la actualización en los logs del sistema', async () => {
-      const datosActualizados = {
-        nombre: 'Nombre Para Log',
-        telefono: '+1111111111',
-      };
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { nombre: 'Nombre Para Log', telefono: '+1111111111' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
-      // Actualizar usuario
-      await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send(datosActualizados)
-        .expect(200);
-
-      // Buscar en logs de actualización de usuarios
-      const logsResponse = await request(app.getHttpServer())
-        .get('/admin/logs?action=update_user')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const logsUrl = '/admin/logs?action=update_user';   
+      const logsHeader = authHelper.getAuthHeader(usuarios.admin.token);
+      const logsResponse = await httpClient.withRetry(
+        () => httpClient.get(logsUrl, logsHeader, 200), 4, 500
+      );
 
       expect(logsResponse.body.logs.length).toBeGreaterThan(0);
-      
-      // Buscar log específico de esta actualización
-      const updateLog = logsResponse.body.logs.find(log => 
-        log.resourceId === usuarioParaActualizar.user.id && 
+
+      const updateLog = logsResponse.body.logs.find((log: any) => 
+        log.resourceId === usuarioParaActualizar.user.id &&
         log.userId === usuarios.admin.user.id
       );
-      
+
       expect(updateLog).toBeDefined();
       expect(updateLog.action).toBe('update_user');
       expect(updateLog.level).toBe('info');
@@ -237,16 +213,17 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
     it('debe poder actualizar todos los campos simultáneamente', async () => {
       const datosCompletos = {
         nombre: 'Nombre Completo Nuevo',
-        email: 'email.completo@test.com',
+        email: `email.completo+${Date.now().toString(36)}@test.com`,
         telefono: '+5555555555',
         password: 'password_completo_123',
       };
 
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send(datosCompletos)
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = datosCompletos;      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 5, 800
+      );
 
       expect(response.body.data).toMatchObject({
         nombre: datosCompletos.nombre,
@@ -254,17 +231,14 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         telefono: datosCompletos.telefono,
       });
 
-      // No debe devolver la contraseña en la respuesta
       expect(response.body.data.password).toBeUndefined();
 
-      // Verificar que el login funciona con los nuevos datos
-      const loginResponse = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: datosCompletos.email,
-          password: datosCompletos.password,
-        })
-        .expect(200);
+      const loginUrl = '/auth/login';
+      const loginBody = { email: datosCompletos.email, password: datosCompletos.password };      
+      const loginHeader = {};
+      const loginResponse = await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+      );
 
       expect(loginResponse.body.data.user.nombre).toBe(datosCompletos.nombre);
     });
@@ -272,53 +246,50 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
 
   describe('Cambio de roles por administrador', () => {
     it('debe permitir al administrador cambiar el rol de un usuario', async () => {
-      // Cambiar cliente a empleado
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ role: UserRole.EMPLEADO })
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { role: UserRole.EMPLEADO };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
       expect(response.body.data.role).toBe(UserRole.EMPLEADO);
 
-      // Verificar que el usuario puede acceder a endpoints de empleado
-      const newUserLogin = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: usuarioParaActualizar.user.email,
-          password: 'cliente123',
-        })
-        .expect(200);
+      const loginUrl = '/auth/login';
+      const loginBody = { email: usuarioParaActualizar.user.email, password: 'cliente123' };      
+      const loginHeader = {};
+      const newUserLogin = await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+      );
 
-      // Probar acceso a ocupación (solo empleados y admin)
-      await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set('Authorization', `Bearer ${newUserLogin.body.data.access_token}`)
-        .expect(200);
+      const ocupacionUrl = '/plazas/ocupacion';
+      const ocupacionHeader = authHelper.getAuthHeader(newUserLogin.body.data.access_token);
+      await httpClient.withRetry(
+        () => httpClient.get(ocupacionUrl, ocupacionHeader, 200), 4, 500
+      );
     });
 
     it('debe registrar el cambio de rol en los logs', async () => {
-      // Cambiar rol
-      await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ role: UserRole.ADMIN })
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { role: UserRole.ADMIN };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
-      // Buscar log de cambio de rol
-      const logsResponse = await request(app.getHttpServer())
-        .get('/admin/logs?action=role_change')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const logsUrl = '/admin/logs?action=role_change';   
+      const logsHeader = authHelper.getAuthHeader(usuarios.admin.token);
+      const logsResponse = await httpClient.withRetry(
+        () => httpClient.get(logsUrl, logsHeader, 200), 4, 500
+      );
 
       if (logsResponse.body.logs.length > 0) {
-        const roleChangeLog = logsResponse.body.logs.find(log => 
+        const roleChangeLog = logsResponse.body.logs.find((log: any) =>
           log.resourceId === usuarioParaActualizar.user.id
         );
-        
         if (roleChangeLog) {
           expect(roleChangeLog.action).toBe('role_change');
-          expect(roleChangeLog.level).toBe('warn'); // Cambio de rol es crítico
+          expect(roleChangeLog.level).toBe('warn');
           expect(roleChangeLog.details).toHaveProperty('previousRole');
           expect(roleChangeLog.details).toHaveProperty('newRole');
         }
@@ -326,166 +297,168 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
     });
 
     it('debe permitir cambiar de admin a empleado y validar pérdida de permisos', async () => {
-      // Crear admin adicional
       const adminTemp = await authHelper.createAndLoginUser(UserRole.ADMIN);
 
-      // Cambiar admin a empleado
-      await request(app.getHttpServer())
-        .patch(`/users/${adminTemp.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ role: UserRole.EMPLEADO })
-        .expect(200);
+      const url = `/users/${adminTemp.user.id}`;
+      const body = { role: UserRole.EMPLEADO };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
-      // Login del usuario degradado
-      const employeeLogin = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: adminTemp.user.email,
-          password: 'admin123',
-        })
-        .expect(200);
+      const loginUrl = '/auth/login';
+      const loginBody = { email: adminTemp.user.email, password: 'admin123' };      
+      const loginHeader = {};
+      const employeeLogin = await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+      );
 
-      // Verificar que ya no puede crear usuarios (solo admin)
-      await request(app.getHttpServer())
-        .post('/users')
-        .set('Authorization', `Bearer ${employeeLogin.body.data.access_token}`)
-        .send({
-          nombre: 'Test Usuario',
-          email: 'test@test.com',
-          password: 'password123',
-          role: UserRole.CLIENTE,
-        })
-        .expect(403);
+      const createUserUrl = '/users';
+      const createUserBody = {
+        nombre: 'Test Usuario',
+        email: `test+${Date.now().toString(36)}@test.com`,
+        password: 'password123',
+        role: UserRole.CLIENTE,
+      };      
+      const createUserHeader = authHelper.getAuthHeader(employeeLogin.body.data.access_token);
+      await httpClient.withRetry(
+        () => httpClient.post(createUserUrl, createUserBody, createUserHeader, 403), 4, 500
+      );
     });
   });
 
   describe('Auto-actualización de usuarios', () => {
     it('debe permitir a un usuario actualizar su propio perfil (excepto rol)', async () => {
-      const datosActualizados = {
-        nombre: 'Mi Nuevo Nombre',
-        telefono: '+0000000000',
-      };
+      const datosActualizados = { nombre: 'Mi Nuevo Nombre', telefono: '+0000000000' };
 
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarioParaActualizar.token))
-        .send(datosActualizados)
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = datosActualizados;      
+      const header = authHelper.getAuthHeader(usuarioParaActualizar.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 4, 500
+      );
 
       expect(response.body.data).toMatchObject(datosActualizados);
     });
 
     it('debe rechazar que un usuario cambie su propio rol', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarioParaActualizar.token))
-        .send({ role: UserRole.ADMIN })
-        .expect(403);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { role: UserRole.ADMIN };      
+      const header = authHelper.getAuthHeader(usuarioParaActualizar.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 403), 4, 500
+      );
 
       expect(response.body.message).toContain('Solo los administradores pueden cambiar roles');
     });
 
     it('debe permitir al empleado actualizar su perfil pero no cambiar rol', async () => {
-      const datosActualizados = {
-        nombre: 'Empleado Actualizado',
-        telefono: '+2222222222',
-      };
+      const datosActualizados = { nombre: 'Empleado Actualizado', telefono: '+2222222222' };
 
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarios.empleado.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .send(datosActualizados)
-        .expect(200);
+      const url = `/users/${usuarios.empleado.user.id}`;
+      const body = datosActualizados;      
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 5, 800
+      );
 
       expect(response.body.data).toMatchObject(datosActualizados);
-      expect(response.body.data.role).toBe(UserRole.EMPLEADO); // Sin cambios
+      expect(response.body.data.role).toBe(UserRole.EMPLEADO);
 
-      // Intentar cambiar rol debe fallar
-      await request(app.getHttpServer())
-        .patch(`/users/${usuarios.empleado.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .send({ role: UserRole.ADMIN })
-        .expect(403);
+      const roleUrl = `/users/${usuarios.empleado.user.id}`;
+      const roleBody = { role: UserRole.ADMIN };      
+      const roleHeader = authHelper.getAuthHeader(usuarios.empleado.token);
+      await httpClient.withRetry(
+        () => httpClient.patch(roleUrl, roleBody, roleHeader, 403), 4, 500
+      );
     });
   });
 
   describe('Validaciones de datos', () => {
     it('debe rechazar emails duplicados', async () => {
-      // Intentar cambiar email al de otro usuario existente
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ email: usuarios.cliente.user.email }) // Email ya existente
-        .expect(400);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { email: usuarios.cliente.user.email };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 400), 4, 500
+      );
 
-      expect(response.body.message).toContain("El email ya está registrado por otro usuario");
+      expect(response.body.message).toContain('El email ya está registrado por otro usuario');
     });
 
     it('debe validar formato de email', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ email: 'email-invalido' })
-        .expect(400);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { email: 'email-invalido' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 400), 4, 500
+      );
 
       expect(response.body.message).toContain('Debe proporcionar un email válido');
     });
 
     it('debe validar longitud mínima de contraseña', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ password: '123' }) // Muy corta
-        .expect(400);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { password: '123' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 400), 4, 500
+      );
 
-      expect(response.body.message).toContain("La contraseña debe tener al menos 6 caracteres");
+      expect(response.body.message).toContain('La contraseña debe tener al menos 6 caracteres');
     });
 
     it('debe validar longitud mínima de nombre', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ nombre: 'A' }) // Muy corto
-        .expect(400);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { nombre: 'A' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 400), 4, 500
+      );
 
-      expect(response.body.message).toContain("El nombre debe tener al menos 2 caracteres");
+      expect(response.body.message).toContain('El nombre debe tener al menos 2 caracteres');
     });
   });
 
   describe('Control de acceso y autorización', () => {
     it('debe rechazar que un cliente actualice otro usuario', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarios.empleado.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .send({ nombre: 'Intento Fallido' })
-        .expect(403);
+      const url = `/users/${usuarios.empleado.user.id}`;
+      const body = { nombre: 'Intento Fallido' };      
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 403), 4, 500
+      );
 
       expect(response.body.message).toContain('No tienes permisos para actualizar este usuario');
     });
 
     it('debe rechazar que un empleado actualice otros usuarios', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarios.cliente.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .send({ nombre: 'Intento Fallido' })
-        .expect(403);
+      const url = `/users/${usuarios.cliente.user.id}`;
+      const body = { nombre: 'Intento Fallido' };      
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 403), 4, 500
+      );
 
       expect(response.body.message).toContain('No tienes permisos para actualizar este usuario');
     });
 
     it('debe rechazar acceso sin autenticación', async () => {
-      await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .send({ nombre: 'Sin Token' })
-        .expect(401);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { nombre: 'Sin Token' };      
+      const header = {};
+      await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 401), 4, 500
+      );
     });
 
     it('debe rechazar token inválido', async () => {
-      await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set('Authorization', 'Bearer token_invalido')
-        .send({ nombre: 'Token Inválido' })
-        .expect(401);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { nombre: 'Token Inválido' };      
+      const header = { 'Authorization': 'Bearer token_invalido' };
+      await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 401), 4, 500
+      );
     });
   });
 
@@ -500,11 +473,12 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         role: UserRole.EMPLEADO,
       };
 
-      const response = await request(app.getHttpServer())
-        .post('/users')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send(nuevoUsuario)
-        .expect(201);
+      const url = '/users';
+      const body = nuevoUsuario;      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.post(url, body, header, 201), 4, 500
+      );
 
       expect(response.body.data).toMatchObject({
         nombre: nuevoUsuario.nombre,
@@ -513,54 +487,48 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         role: nuevoUsuario.role,
       });
 
-      // Verificar que puede hacer login
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: nuevoUsuario.email,
-          password: nuevoUsuario.password,
-        })
-        .expect(200);
+      const loginUrl = '/auth/login';
+      const loginBody = { email: nuevoUsuario.email, password: nuevoUsuario.password };      
+      const loginHeader = {};
+      await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+      );
     });
 
     it('debe permitir al admin eliminar usuarios', async () => {
-      // Crear usuario para eliminar
       const usuarioTemp = await authHelper.createAndLoginUser(UserRole.CLIENTE);
 
-      // Eliminar usuario
       await request(app.getHttpServer())
         .delete(`/users/${usuarioTemp.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
+        .set('Authorization', `Bearer ${usuarios.admin.token}`)
         .expect(200);
 
-      // Verificar que ya no existe
-      await request(app.getHttpServer())
-        .get(`/users/${usuarioTemp.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(404);
+      const getUrl = `/users/${usuarioTemp.user.id}`;
+      const getHeader = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.get(getUrl, getHeader, 404), 4, 500
+      );
 
-      // Verificar que no puede hacer login
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: usuarioTemp.user.email,
-          password: 'cliente123',
-        })
-        .expect(401);
+      const loginUrl = '/auth/login';
+      const loginBody = { email: usuarioTemp.user.email, password: 'cliente123' };      
+      const loginHeader = {};
+      await httpClient.withRetry(
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 401), 4, 500
+      );
     });
 
     it('debe mostrar estadísticas de usuarios al admin', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/users/stats')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/users/stats';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toHaveProperty('total');
       expect(response.body.data).toHaveProperty('admins');
       expect(response.body.data).toHaveProperty('empleados');
       expect(response.body.data).toHaveProperty('clientes');
 
-      // Verificar que los números son consistentes
       const stats = response.body.data;
       expect(stats.total).toBe(stats.admins + stats.empleados + stats.clientes);
     });
@@ -569,48 +537,47 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
   describe('Casos edge y manejo de errores', () => {
     it('debe manejar actualización de usuario inexistente', async () => {
       const url = '/users/00000000-0000-0000-0000-000000000000';
-      const body = { nombre: 'No Existe' };
-      const response = await patchWithRetry(app.getHttpServer(), url, usuarios.admin.token, body, 404);
-
+      const body = { nombre: 'No Existe' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 404), 4, 500
+      );
       expect(response.body.message).toContain('no encontrado');
     });
 
     it('debe manejar campos vacíos apropiadamente', async () => {
-      // Campos opcionales vacíos deben ser aceptados
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ telefono: '' })
-        .expect(200);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { telefono: '' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 200), 5, 800
+      );
 
       expect(response.body.data.telefono).toBe('');
     });
 
     it('debe rechazar cambios a campos que no existen', async () => {
-      const response = await request(app.getHttpServer())
-        .patch(`/users/${usuarioParaActualizar.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ 
-          nombre: 'Válido',
-          campo_inexistente: 'No debe ser aceptado'
-        })
-        .expect(400);
+      const url = `/users/${usuarioParaActualizar.user.id}`;
+      const body = { nombre: 'Válido', campo_inexistente: 'No debe ser aceptado' };      
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.patch(url, body, header, 400), 5, 800
+      );
 
-      expect(response.body.message).toContain("property campo_inexistente should not exist");
+      expect(response.body.message).toContain('property campo_inexistente should not exist');
     });
   });
 
   afterAll(async () => {
     try {
-      // Limpieza de estado estático
-      DataFixtures.clearGeneratedPlazaNumbers();
-      DataFixtures.clearGeneratedPlacas();
+      DataGenerator.clearStaticState();
+      DataFixtures.clearGeneratedPlazaNumbers?.();
+      //DataFixtures.clearGeneratedPlacas?.();
     } finally {
       if (app && typeof app.close === 'function') {
         await app.close();
       }
       if (server && typeof server.close === 'function') {
-        // Cierre explícito del socket del servidor para evitar TCPSERVERWRAP
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     }

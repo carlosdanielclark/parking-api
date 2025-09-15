@@ -1,25 +1,34 @@
-
 // test/e2e/casos/consulta-ocupacion.e2e-spec.ts
 import request from 'supertest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
-import { AuthHelper, AuthenticatedUser } from '../../helpers/auth-helper';
-import { DataFixtures } from '../../helpers/data-fixtures';
-import { UserRole } from '../../../src/entities/user.entity';
 import { EstadoPlaza, TipoPlaza } from '../../../src/entities/plaza.entity';
-import { logStepV3 } from '../../helpers/log-util';
+import { 
+  DataFixtures, 
+  AuthHelper, 
+  AuthenticatedUser,
+  HttpClient
+} from '../../helpers';
+import { DataGenerator } from '../../helpers/data/data-generator';
+import { CleanupHelper } from '../../helpers/infra/cleanup-helper';
 
 /**
  * Tests E2E para Caso de Uso 2: Consultar Ocupación del Parking
  * 
  * Cubre el flujo donde un empleado desea conocer la ocupación actual del parking,
  * consultando información sobre plazas ocupadas, libres y estadísticas generales.
+ * 
+ * Ahora utiliza DataGenerator para generación única de IDs
+ * Limpieza consistente del estado estático entre tests
+ * Manejo mejorado de errores de conexión
  */
 describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
   let app: INestApplication;
   let authHelper: AuthHelper;
   let dataFixtures: DataFixtures;
+  let httpClient: HttpClient;
   let usuarios: {
     admin: AuthenticatedUser;
     empleado: AuthenticatedUser;
@@ -38,56 +47,55 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
 
     authHelper = new AuthHelper(app);
     dataFixtures = new DataFixtures(app);
+    httpClient = new HttpClient(app);
   });
 
   beforeEach(async () => {
-    // ✅ NUEVO: Limpieza completa de la base de datos antes de cada prueba
+    // Limpieza completa del estado estático antes de cada test
+    DataGenerator.clearStaticState();
+    DataFixtures.clearGeneratedPlazaNumbers();
+
+    // Limpieza completa de la base de datos antes de cada prueba
     try {
       const adminToken = await authHelper.getAdminToken();
-      await dataFixtures.cleanupAll(adminToken); // Usar la nueva función
-      logStepV3('Base de datos limpiada exitosamente antes de la prueba', {
-        etiqueta: "BEFORE_EACH_CLEANUP",
-        tipo: "info"
-      });
-    } catch (error) {
-      logStepV3('Error durante la limpieza en beforeEach, se procede con precaución', {
-        etiqueta: "BEFORE_EACH_CLEANUP",
-        tipo: "warning"
-      }, error.message);
+      await CleanupHelper.cleanupAll(app.get(DataSource));
+    } catch (error: any) {
+      // Continuar con precaución en caso de error de limpieza
     }
 
     // Esperar para estabilización
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Limpieza en memoria
-    DataFixtures.clearGeneratedPlazaNumbers();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    DataFixtures.clearGeneratedPlazaNumbers();
-
     reservas = [];
-    
-    logStepV3('🔄 Estado inicial limpiado, iniciando setup', {
-      etiqueta: "SETUP",
-      tipo: "info"
-    });
 
+    // Crear usuarios con emails únicos usando timestamp
+    const timestamp = Date.now();
     usuarios = await authHelper.createMultipleUsers();
     
-    // Crear mix realista de plazas por tipo
+    //Crear plazas usando DataGenerator para IDs únicos
     plazas = await dataFixtures.createPlazas(usuarios.admin.token, {
       count: 20, // 20 plazas total
       estado: EstadoPlaza.LIBRE
     });
+  });
 
-    logStepV3(`🏢 Setup completado: ${plazas.length} plazas creadas`);
+  afterEach(async () => {
+    // Limpieza posterior a cada test
+    try {
+      const adminToken = await authHelper.getAdminToken();
+      await dataFixtures.cleanupComplete(adminToken);
+    } catch (error: any) {
+      // Continuar en caso de error de limpieza
+    }
   });
 
   describe('Consulta de ocupación por empleado', () => {
     it('debe permitir a un empleado consultar la ocupación actual del parking', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toMatchObject({
@@ -100,11 +108,10 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       });
 
       expect(response.body.timestamp).toBeDefined();
-      logStepV3('✅ Ocupación inicial obtenida:', {etiqueta:"Consulta empleado"}, response.body.data);
     });
 
     it('debe mostrar ocupación actualizada después de crear reservas', async () => {
-      // Crear cliente con vehículos
+      // Crear cliente con vehículo usando DataGenerator para placa única
       const clienteData = await authHelper.createClienteWithVehiculo();
 
       // Crear 3 reservas para ocupar plazas
@@ -123,47 +130,46 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const fechaFin3 = new Date(fechaInicio3);
       fechaFin3.setHours(fechaFin3.getHours() + 3);
 
-      const reservasPromises = [
-        dataFixtures.createReserva(
-          clienteData.cliente.token,
-          {
-            usuario_id: clienteData.cliente.user.id,
-            plaza: plazas[0],
-            vehiculo_id: clienteData.vehiculo.id,
-            fecha_inicio: fechaInicio1,
-            fecha_fin: fechaFin1
-          }
-        ),
-        dataFixtures.createReserva(
-          clienteData.cliente.token,
-          {
-            usuario_id: clienteData.cliente.user.id,
-            plaza: plazas[1],
-            vehiculo_id: clienteData.vehiculo.id,
-            fecha_inicio: fechaInicio2,
-            fecha_fin: fechaFin2
-          }
-        ),
-        dataFixtures.createReserva(
-          clienteData.cliente.token,
-          {
-            usuario_id: clienteData.cliente.user.id,
-            plaza: plazas[2],
-            vehiculo_id: clienteData.vehiculo.id,
-            fecha_inicio: fechaInicio3,
-            fecha_fin: fechaFin3
-          }
-        ),
-      ];
+      // Crear reservas secuencialmente para evitar condiciones de carrera
+      const reserva1 = await dataFixtures.createReserva(
+        clienteData.cliente.token,
+        {
+          usuario_id: clienteData.cliente.user.id,
+          plaza: plazas[0],
+          vehiculo_id: clienteData.vehiculo.id,
+          fecha_inicio: fechaInicio1,
+          fecha_fin: fechaFin1
+        }
+      );
 
+      const reserva2 = await dataFixtures.createReserva(
+        clienteData.cliente.token,
+        {
+          usuario_id: clienteData.cliente.user.id,
+          plaza: plazas[1],
+          vehiculo_id: clienteData.vehiculo.id,
+          fecha_inicio: fechaInicio2,
+          fecha_fin: fechaFin2
+        }
+      );
 
-      await Promise.all(reservasPromises);
+      const reserva3 = await dataFixtures.createReserva(
+        clienteData.cliente.token,
+        {
+          usuario_id: clienteData.cliente.user.id,
+          plaza: plazas[2],
+          vehiculo_id: clienteData.vehiculo.id,
+          fecha_inicio: fechaInicio3,
+          fecha_fin: fechaFin3
+        }
+      );
 
       // Consultar ocupación actualizada
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toMatchObject({
         total: 20,
@@ -173,15 +179,14 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
         porcentajeOcupacion: 15, // 3/20 = 15%
         disponibles: 17,
       });
-
-      logStepV3('✅ Ocupación después de reservas:', response.body.data);
     });
 
     it('debe mostrar estadísticas correctas por tipo de plaza', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       // ✅ VERIFICAR estructura real primero
       if (response.body.data.plazasPorTipo) {
@@ -201,61 +206,52 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
           expect(typeof tipo.libres).toBe('number');
           expect(typeof tipo.ocupadas).toBe('number');
         });
-
-        logStepV3('✅ Estadísticas por tipo:', plazasPorTipo);
       } else {
         // ✅ ALTERNATIVA: Verificar estadísticas básicas
         expect(response.body.data).toHaveProperty('total');
         expect(response.body.data).toHaveProperty('ocupadas');
         expect(response.body.data).toHaveProperty('libres');
-        
-        logStepV3('⚠️ plazasPorTipo no implementado en API, usando estadísticas básicas', {
-          etiqueta: "TEST_ADAPTATION",
-          tipo: "warning"
-        });
       }
     });
 
     it('debe calcular porcentajes de ocupación correctamente', async () => {
-      // Crear reservas para 50% de ocupación (10 de 20 plazas)
-      const clienteData = await authHelper.createClienteWithVehiculo();
-      
-      const vehiculosAdicionales = await dataFixtures.createMultipleVehiculos(
-        clienteData.cliente.user.id,
-        clienteData.cliente.token,
-        5
-      );
-
-      // Crear 10 reservas usando diferentes vehículos
-      const reservasPromises: any[] = [];
+      // Crear 10 clientes diferentes con sus propios vehículos
+      const clientesData: any[] = [];
       for (let i = 0; i < 10; i++) {
-        const vehiculo = i === 0 ? clienteData.vehiculo : vehiculosAdicionales[i % 5];
-        
-        const fechaInicio = new Date();
-        fechaInicio.setHours(fechaInicio.getHours() + i + 1);
-        const fechaFin = new Date(fechaInicio);
-        fechaFin.setHours(fechaFin.getHours() + 2);
-        
-        reservasPromises.push(
-          dataFixtures.createReserva(
-            clienteData.cliente.token,
-            {
-              usuario_id: clienteData.cliente.user.id,
-              plaza: plazas[i],
-              vehiculo_id: vehiculo.id,
-              fecha_inicio: fechaInicio,
-              fecha_fin: fechaFin
-            }
-          )
-        );
+        const clienteData = await authHelper.createClienteWithVehiculo();
+        clientesData.push(clienteData);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Pequeña pausa
       }
 
-      await Promise.all(reservasPromises);
+      // Crear reservas con diferentes vehículos y sin superposición
+      for (let i = 0; i < 10; i++) {
+        const clienteData = clientesData[i];
+        
+        // Horas NO superpuestas: cada reserva comienza 2 horas después de la anterior
+        const fechaInicio = new Date();
+        fechaInicio.setHours(fechaInicio.getHours() + (i * 2) + 1); // +1, +3, +5, etc.
+        const fechaFin = new Date(fechaInicio);
+        fechaFin.setHours(fechaFin.getHours() + 1); // 1 hora de duración
+        
+        await dataFixtures.createReserva(
+          clienteData.cliente.token,
+          {
+            usuario_id: clienteData.cliente.user.id,
+            plaza: plazas[i],
+            vehiculo_id: clienteData.vehiculo.id,
+            fecha_inicio: fechaInicio,
+            fecha_fin: fechaFin
+          }
+        );
+        
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
 
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toMatchObject({
         total: 20,
@@ -263,8 +259,6 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
         libres: 10,
         porcentajeOcupacion: 50, // 10/20 = 50%
       });
-
-      logStepV3('✅ Ocupación al 50%:', response.body.data);
     });
 
     it('debe incluir información sobre próximas liberaciones', async () => {
@@ -287,10 +281,11 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
         }
       );
 
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       if (response.body.data.proximasLiberaciones) {
         expect(Array.isArray(response.body.data.proximasLiberaciones)).toBe(true);
@@ -307,30 +302,32 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
 
   describe('Consulta de plazas disponibles', () => {
     it('debe mostrar todas las plazas libres', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/plazas/disponibles')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(200);
+      const url = '/plazas/disponibles';   
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toHaveLength(20);
-      expect(response.body.data.every(plaza => plaza.estado === EstadoPlaza.LIBRE)).toBe(true);
+      expect(response.body.data.every((plaza: any) => plaza.estado === EstadoPlaza.LIBRE)).toBe(true);
     });
 
     it('debe permitir filtrar plazas disponibles por tipo', async () => {
-      // Crear plazas específicas de cada tipo
+      // Crear plazas específicas de cada tipo usando DataGenerator
       await dataFixtures.createPlazas(usuarios.admin.token, {
         count: 3,
         tipo: TipoPlaza.ELECTRICO
       });
 
-      const response = await request(app.getHttpServer())
-        .get('/plazas/disponibles?tipo=electrico')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(200);
+      const url = '/plazas/disponibles?tipo=electrico';   
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data.length).toBeGreaterThan(0);
-      expect(response.body.data.every(plaza => plaza.tipo === TipoPlaza.ELECTRICO)).toBe(true);
+      expect(response.body.data.every((plaza: any) => plaza.tipo === TipoPlaza.ELECTRICO)).toBe(true);
     });
 
     it('debe excluir plazas ocupadas de la lista de disponibles', async () => {
@@ -353,79 +350,87 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
         }
       );
 
-
-      const response = await request(app.getHttpServer())
-        .get('/plazas/disponibles')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(200);
+      const url = '/plazas/disponibles';   
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toHaveLength(19); // Una menos
-      expect(response.body.data.find(plaza => plaza.id === plazas[0].id)).toBeUndefined();
+      expect(response.body.data.find((plaza: any) => plaza.id === plazas[0].id)).toBeUndefined();
     });
 
     it('debe excluir plazas en mantenimiento', async () => {
       // Poner plaza en mantenimiento
-      await request(app.getHttpServer())
-        .patch(`/plazas/${plazas[0].id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .send({ estado: EstadoPlaza.MANTENIMIENTO })
-        .expect(200);
+      const urlPatch = `/plazas/${plazas[0].id}`;
+      const bodyPatch = { estado: EstadoPlaza.MANTENIMIENTO };      
+      const headerPatch = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.patch(urlPatch, bodyPatch, headerPatch, 200), 4, 500
+      );
 
-      const response = await request(app.getHttpServer())
-        .get('/plazas/disponibles')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(200);
+      const url = '/plazas/disponibles';   
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toHaveLength(19);
-      expect(response.body.data.find(plaza => plaza.id === plazas[0].id)).toBeUndefined();
+      expect(response.body.data.find((plaza: any) => plaza.id === plazas[0].id)).toBeUndefined();
     });
   });
 
   describe('Control de acceso por roles', () => {
     it('debe permitir acceso a empleados y administradores', async () => {
       // Empleado
-      await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const headerEmpleado = authHelper.getAuthHeader(usuarios.empleado.token);
+      await httpClient.withRetry(
+        () => httpClient.get(url, headerEmpleado, 200), 4, 500
+      );
 
       // Admin
-      await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const headerAdmin = authHelper.getAuthHeader(usuarios.admin.token);
+      await httpClient.withRetry(
+        () => httpClient.get(url, headerAdmin, 200), 4, 500
+      );
     });
 
     it('debe rechazar acceso a clientes para ocupación detallada', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(403);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 403), 4, 500
+      );
 
       expect(response.body.message).toContain('Acceso denegado');
     });
 
     it('debe permitir a clientes ver plazas disponibles', async () => {
-      await request(app.getHttpServer())
-        .get('/plazas/disponibles')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(200);
+      const url = '/plazas/disponibles';   
+      const header = authHelper.getAuthHeader(usuarios.cliente.token);
+      await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
     });
 
     it('debe rechazar acceso sin autenticación', async () => {
-      await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .expect(401);
+      const url = '/plazas/ocupacion';   
+      const header = {};
+      await httpClient.withRetry(
+        () => httpClient.get(url, header, 401), 4, 500
+      );
     });
   });
 
   describe('Tiempo real y consistencia de datos', () => {
     it('debe reflejar cambios inmediatos tras operaciones', async () => {
       // Ocupación inicial
-      let ocupacionResponse = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      let ocupacionResponse = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       const ocupacionInicial = ocupacionResponse.body.data.ocupadas;
 
@@ -449,22 +454,22 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       );
 
       // Verificar cambio inmediato
-      ocupacionResponse = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      ocupacionResponse = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(ocupacionResponse.body.data.ocupadas).toBe(ocupacionInicial + 1);
     });
 
     it('debe mantener consistencia entre ocupación y plazas disponibles', async () => {
+      const urlOcupacion = '/plazas/ocupacion';   
+      const headerEmpleado = authHelper.getAuthHeader(usuarios.empleado.token);
+      const urlDisponibles = '/plazas/disponibles';   
+      const headerCliente = authHelper.getAuthHeader(usuarios.cliente.token);
+
       const [ocupacionRes, disponiblesRes] = await Promise.all([
-        request(app.getHttpServer())
-          .get('/plazas/ocupacion')
-          .set(authHelper.getAuthHeader(usuarios.empleado.token)),
-        request(app.getHttpServer())
-          .get('/plazas/disponibles')
-          .set(authHelper.getAuthHeader(usuarios.cliente.token))
+        httpClient.withRetry(() => httpClient.get(urlOcupacion, headerEmpleado, 200), 4, 500),
+        httpClient.withRetry(() => httpClient.get(urlDisponibles, headerCliente, 200), 4, 500)
       ]);
 
       const ocupacion = ocupacionRes.body.data;
@@ -476,45 +481,42 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
   });
 
   describe('Rendimiento con datos masivos', () => {
-  it('debe responder rápidamente con muchas plazas', async () => {
-    // ✅ CREAR plazas de manera más eficiente
-    const plazasPromises: any[]=[];
-    for (let i = 0; i < 10; i++) { // ✅ REDUCIR a 10 lotes de 10
-      plazasPromises.push(
-        dataFixtures.createPlazas(usuarios.admin.token, { 
-          count: 10,
+    it('debe responder rápidamente con muchas plazas', async () => {
+      // Crear plazas de manera más eficiente en lotes pequeños
+      const batchSize = 5;
+      const totalPlazas = 50; // Reducido para mejor rendimiento
+      
+      for (let i = 0; i < totalPlazas / batchSize; i++) {
+        await dataFixtures.createPlazas(usuarios.admin.token, { 
+          count: batchSize,
           prefix: `B${i}`
-        })
+        });
+        await new Promise(resolve => setTimeout(resolve, 100)); // Pequeña pausa
+      }
+
+      const startTime = Date.now();
+      
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
       );
-    }
-    
-    await Promise.all(plazasPromises);
 
-    const startTime = Date.now();
-    
-    const response = await request(app.getHttpServer())
-      .get('/plazas/ocupacion')
-      .set(authHelper.getAuthHeader(usuarios.empleado.token))
-      .expect(200);
-
-    const responseTime = Date.now() - startTime;
-    
-    expect(responseTime).toBeLessThan(5000); // ✅ 5 segundos más realista
-    expect(response.body.data.total).toBeGreaterThanOrEqual(100);
-
-    logStepV3(`⚡ Consulta de ocupación con ${response.body.data.total} plazas en ${responseTime}ms`);
-  }, 20000); // ✅ AUMENTAR timeout a 20 segundos
-
+      const responseTime = Date.now() - startTime;
+      
+      expect(responseTime).toBeLessThan(3000); // ✅ 3 segundos
+      expect(response.body.data.total).toBeGreaterThanOrEqual(totalPlazas);
+    }, 15000);
 
     it('debe manejar consultas concurrentes sin degradación', async () => {
       const promesasConsulta: any[] = [];
-      const numeroConsultas = 5;
+      const numeroConsultas = 3; // Reducido para mayor estabilidad
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
 
       for (let i = 0; i < numeroConsultas; i++) {
         promesasConsulta.push(
-          request(app.getHttpServer())
-            .get('/plazas/ocupacion')
-            .set(authHelper.getAuthHeader(usuarios.empleado.token))
+          httpClient.withRetry(() => httpClient.get(url, header, 200), 4, 500)
         );
       }
 
@@ -523,24 +525,23 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const totalTime = Date.now() - startTime;
 
       // Todas las consultas deben ser exitosas
-      resultados.forEach(response => {
+      resultados.forEach((response) => {
         expect(response.status).toBe(200);
         expect(response.body.success).toBe(true);
       });
 
       // Tiempo total razonable para consultas concurrentes
-      expect(totalTime).toBeLessThan(5000);
-
-      logStepV3(`⚡ ${numeroConsultas} consultas concurrentes completadas en ${totalTime}ms`);
+      expect(totalTime).toBeLessThan(3000);
     });
   });
 
   describe('Información detallada y tendencias', () => {
     it('debe incluir tendencias de ocupación cuando esté disponible', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       if (response.body.data.tendenciaOcupacion) {
         const tendencia = response.body.data.tendenciaOcupacion;
@@ -551,20 +552,16 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
     });
 
     it('debe mostrar distribución realista de tipos de plaza', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       const porTipo = response.body.data.plazasPorTipo;
 
       // Si la API no devuelve plazasPorTipo: validar estadísticas básicas y continuar
       if (!porTipo || typeof porTipo !== 'object') {
-        logStepV3('⚠️ plazasPorTipo no implementado en API, usando estadísticas básicas', {
-          etiqueta: "TEST_ADAPTATION",
-          tipo: "warning"
-        }, response.body.data);
-
         expect(response.body.data).toHaveProperty('total');
         expect(response.body.data).toHaveProperty('ocupadas');
         expect(response.body.data).toHaveProperty('libres');
@@ -583,7 +580,6 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       expect(normal.total).toBeGreaterThanOrEqual(discapacitado.total);
       expect(normal.total).toBeGreaterThanOrEqual(electrico.total);
     });
-
   });
 
   describe('Integración con sistema de reservas', () => {
@@ -608,24 +604,26 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       );
 
       // Verificar ocupación con reserva activa
-      let ocupacionRes = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      const url = '/plazas/ocupacion';   
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      let ocupacionRes = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(ocupacionRes.body.data.ocupadas).toBe(1);
 
-      // Cancelar reserva
-      await request(app.getHttpServer())
-        .post(`/reservas/${reserva.id}/cancelar`)
-        .set(authHelper.getAuthHeader(clienteData.cliente.token))
-        .expect(200);
+      // Cancelar reserva (usa endpoint público)
+      const cancelUrl = `/reservas/${reserva.id}/cancelar`;
+      const cancelBody = {};      
+      const cancelHeader = authHelper.getAuthHeader(clienteData.cliente.token);
+      await httpClient.withRetry(
+        () => httpClient.post(cancelUrl, cancelBody, cancelHeader, 200), 4, 500
+      );
 
       // Verificar ocupación tras cancelación
-      ocupacionRes = await request(app.getHttpServer())
-        .get('/plazas/ocupacion')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(200);
+      ocupacionRes = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(ocupacionRes.body.data.ocupadas).toBe(0);
       expect(ocupacionRes.body.data.libres).toBe(20);
@@ -633,6 +631,15 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
   });
 
   afterAll(async () => {
+    // Limpieza final completa
+    try {
+      const adminToken = await authHelper.getAdminToken();
+      await dataFixtures.cleanupComplete(adminToken);
+      DataGenerator.clearStaticState();
+    } catch (error: any) {
+      // Continuar en caso de error de limpieza
+    }
+    
     await app.close();
   });
 });

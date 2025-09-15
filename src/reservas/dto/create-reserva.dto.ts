@@ -1,7 +1,46 @@
 // src/reservas/dto/create-reserva.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsUUID, Min, IsDate } from 'class-validator';
+import {
+  IsString,
+  IsDateString,
+  Validate,
+  IsNotEmpty,
+  IsUUID,
+  ValidationArguments,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  IsInt,
+  Min,
+  IsDate,
+} from 'class-validator';
+
+// Validador personalizado para fechas futuras
+@ValidatorConstraint({ name: 'IsFutureDate', async: false })
+class IsFutureDate implements ValidatorConstraintInterface {
+  validate(value: Date, args: ValidationArguments) {
+    if (!value) return false;
+    const date = new Date(value);
+    return date.getTime() > Date.now();
+  }
+  defaultMessage(args: ValidationArguments) {
+    return 'fecha de inicio debe ser futura';
+  }
+}
+
+// Validador personalizado para fecha_fin > fecha_inicio
+@ValidatorConstraint({ name: 'IsEndAfterStart', async: false })
+class IsEndAfterStart implements ValidatorConstraintInterface {
+  validate(fecha_fin: Date, args: ValidationArguments) {
+    const object: any = args.object;
+    const fecha_inicio = object.fecha_inicio;
+    if (!fecha_fin || !fecha_inicio) return false;
+    return new Date(fecha_fin).getTime() > new Date(fecha_inicio).getTime();
+  }
+  defaultMessage(args: ValidationArguments) {
+    return 'fecha de fin debe ser posterior';
+  }
+}
 
 /**
  * DTO para la creación de reservas de parking
@@ -45,6 +84,7 @@ export class CreateReservaDto {
   @ApiProperty({ description: 'Fecha/hora de inicio (ISO 8601)' })
   @Type(() => Date)
   @IsDate()
+  @Validate(IsFutureDate)
   fecha_inicio: Date;
 
   /**
@@ -55,5 +95,6 @@ export class CreateReservaDto {
   @ApiProperty({ description: 'Fecha/hora de fin (ISO 8601)' })
   @Type(() => Date)
   @IsDate()
+  @Validate(IsEndAfterStart)
   fecha_fin: Date;
 }

@@ -44,7 +44,8 @@ export class ReservasController {
    * @param currentUser - Usuario autenticado
    * @returns Reserva creada con detalles completos
    */
-  @Post()
+  @Post('/')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.CREATED)
   @AuditAction(LogAction.CREATE_RESERVATION)
   async create(
@@ -184,14 +185,7 @@ export class ReservasController {
     this.logger.log(`Solicitud de reserva específica: ${id} por ${currentUser.userId}`);
     
     try {
-      // Para simplificar, usamos el método findByUser con verificación en el servicio
-      const reservas = await this.reservasService.findAll(currentUser);
-      const reserva = reservas.find(r => r.id === id);
-      
-      if (!reserva) {
-        this.logger.warn(`Reserva no encontrada o sin permisos: ${id}`);
-        throw new Error('Reserva no encontrada o sin permisos de acceso');
-      }
+      const reserva = await this.reservasService.findOne(id, currentUser);
 
       this.logger.log(`Reserva encontrada: ${reserva.id}`);
       

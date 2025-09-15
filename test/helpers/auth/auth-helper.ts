@@ -1,17 +1,13 @@
-// test/helpers/auth-helper.ts
+// Archivo: test/helpers/auth/auth-helper.ts
+// MODIFICADO - Movido a subcarpeta auth/, manteniendo funcionalidad
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
-import { UserRole } from '../../src/entities/user.entity';
-import { logStepV3 } from './log-util';
-import { DataFixtures } from './data-fixtures';
+import { UserRole } from '../../../src/entities/user.entity';
+import { logStepV3 } from '../log/log-util';
+import { DataFixtures } from '../data/data-fixtures';
 
 export interface AuthenticatedUser {
-  user: {
-    id: string;
-    email: string;
-    nombre: string;
-    role: UserRole;
-  };
+  user: { id: string; email: string; nombre: string; role: UserRole };
   token: string;
 }
 
@@ -26,11 +22,12 @@ export class AuthHelper {
    * NUEVO - doLoginWithRetry
    * Realiza POST /auth/login con reintentos focalizados en ECONNRESET.
    * Devuelve el objeto response de supertest (para extraer tokens, etc.).
+   * Aumentado el delay entre reintentos para mayor estabilidad
    */
   private async doLoginWithRetry(
     payload: { email: string; password: string },
-    maxRetries = 2,
-    delayMs = 150
+    maxRetries = 3, // Aumentado a 3 reintentos
+    delayMs = 300   // Aumentado delay a 300ms
   ): Promise<request.Response> {
     let attempt = 0;
     while (true) {
@@ -56,39 +53,25 @@ export class AuthHelper {
     }
   }
 
-  /**
-   * Crear un cliente con un vehículo asociado
-   * EDITADO: delega la creación de vehículo a DataFixtures.createVehiculo
-   */
-  async createClienteWithVehiculo(): Promise<{
-    cliente: AuthenticatedUser;
-    vehiculo: any;
-  }> {
-    const cliente = await this.createAndLoginUser(UserRole.CLIENTE);
 
+  async createClienteWithVehiculo(): Promise<{ cliente: AuthenticatedUser; vehiculo: any }> {
+    const cliente = await this.createAndLoginUser(UserRole.CLIENTE);
     try {
       const vehiculo = await this.dataFixtures.createVehiculo(cliente.user.id, cliente.token, {});
       return { cliente, vehiculo };
     } catch (error: any) {
       const serverBody = error?.response?.body ?? error?.response ?? error?.message;
       logStepV3('❌ Error creando vehículo en createClienteWithVehiculo', {
-        etiqueta: 'HELPER',
+        etiqueta: 'AUTH_HELPER',
         tipo: 'error',
       }, serverBody);
       throw error;
     }
   }
 
-  /**
-   * Crear y hacer login de un usuario de prueba
-   */
   async createAndLoginUser(
     role: UserRole = UserRole.CLIENTE,
-    customData: Partial<{
-      nombre: string;
-      email: string;
-      telefono: string;
-    }> = {}
+    customData: Partial<{ nombre: string; email: string; telefono: string }> = {}
   ): Promise<AuthenticatedUser> {
     const timestamp = Date.now();
     const baseEmail = customData.email || `test-${role.toLowerCase()}-${timestamp}@test.com`;
@@ -100,15 +83,12 @@ export class AuthHelper {
       telefono: customData.telefono || '+123456789',
     };
 
-    // Registrar usuario
     const registerResponse = await request(this.app.getHttpServer())
       .post('/auth/register')
       .send(userData)
-      .timeout(15000)
+      .timeout(20000)
       .expect(201);
 
-    // Si no es cliente, actualizar el rol (requiere admin)
-    let userResponse = registerResponse;
     if (role !== UserRole.CLIENTE) {
       const adminToken = await this.getAdminToken();
 
@@ -116,59 +96,27 @@ export class AuthHelper {
         .patch(`/users/${registerResponse.body.data.user.id}`)
         .set(this.getAuthHeader(adminToken))
         .send({ role })
-        .timeout(15000)
+        .timeout(20000)
         .expect(200);
 
-      // Re-login -> usar doLoginWithRetry para mayor resiliencia
-      userResponse = await this.doLoginWithRetry({
-        email: userData.email,
-        password: userData.password,
-      });
+      const userResponse = await this.doLoginWithRetry({ email: userData.email, password: userData.password });
 
-      return {
-        user: userResponse.body.data.user,
-        token: userResponse.body.data.access_token,
-      };
+      return { user: userResponse.body.data.user, token: userResponse.body.data.access_token };
     }
 
-    return {
-      user: registerResponse.body.data.user,
-      token: registerResponse.body.data.access_token,
-    };
+    return { user: registerResponse.body.data.user, token: registerResponse.body.data.access_token };
   }
 
-  /**
-   * Crear múltiples usuarios de diferentes roles
-   */
-  async createMultipleUsers(): Promise<{
-    admin: AuthenticatedUser;
-    empleado: AuthenticatedUser;
-    cliente: AuthenticatedUser;
-  }> {
+  async createMultipleUsers(): Promise<{ admin: AuthenticatedUser; empleado: AuthenticatedUser; cliente: AuthenticatedUser }> {
     const timestamp = Date.now();
-
     const [admin, empleado, cliente] = await Promise.all([
-      this.createAndLoginUser(UserRole.ADMIN, {
-        email: `admin-${timestamp}@test.com`,
-        nombre: 'Admin Test',
-      }),
-      this.createAndLoginUser(UserRole.EMPLEADO, {
-        email: `empleado-${timestamp}@test.com`,
-        nombre: 'Empleado Test',
-      }),
-      this.createAndLoginUser(UserRole.CLIENTE, {
-        email: `cliente-${timestamp}@test.com`,
-        nombre: 'Cliente Test',
-      }),
+      this.createAndLoginUser(UserRole.ADMIN, { email: `admin-${timestamp}@test.com`, nombre: 'Admin Test' }),
+      this.createAndLoginUser(UserRole.EMPLEADO, { email: `empleado-${timestamp}@test.com`, nombre: 'Empleado Test' }),
+      this.createAndLoginUser(UserRole.CLIENTE, { email: `cliente-${timestamp}@test.com`, nombre: 'Cliente Test' }),
     ]);
-
     return { admin, empleado, cliente };
   }
 
-  /**
-   * Obtener token del administrador predeterminado del sistema
-   * (Tu versión ya implementaba retries; la mantengo)
-   */
   async getAdminToken(maxRetries = 5): Promise<string> {
     let attempts = 0;
     const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -183,8 +131,7 @@ export class AuthHelper {
             if (r.status !== 200) throw new Error(`Login admin status=${r.status}`);
           });
 
-        const token =
-          res.body.data?.access_token || res.body.access_token || res.body.data?.token;
+        const token = res.body.data?.access_token || res.body.access_token || res.body.data?.token;
         if (!token) throw new Error('Token no encontrado en respuesta de login admin');
         return token;
       } catch (err: any) {
@@ -202,68 +149,45 @@ export class AuthHelper {
     throw new Error('Flujo inesperado getAdminToken');
   }
 
-  /**
-   * EDITADO - Ahora login usa doLoginWithRetry internamente
-   */
   async login(email: string, password: string): Promise<string> {
     const res = await this.doLoginWithRetry({ email, password }, 2, 150);
     return res.body.data.access_token;
   }
 
-  /**
-   * EDITADO - getEmpleadoToken usa doLoginWithRetry para evitar ECONNRESET intermitente
-   */
   async getEmpleadoToken(): Promise<string> {
     const res = await this.doLoginWithRetry({ email: 'empleado@parking.com', password: 'empleado123' }, 2, 150);
     return res.body.data.access_token;
   }
 
-  /**
-   * EDITADO - getClienteToken usa doLoginWithRetry para evitar ECONNRESET intermitente
-   */
   async getClienteToken(): Promise<string> {
     const res = await this.doLoginWithRetry({ email: 'cliente@parking.com', password: 'cliente123' }, 2, 150);
     return res.body.data.access_token;
   }
 
-  /**
-   * Generar headers de autorización para requests
-   */
   getAuthHeader(token: string): { Authorization: string } {
     return { Authorization: `Bearer ${token}` };
   }
 
-  /**
-   * Verificar que un token es válido
-   */
   async verifyToken(token: string): Promise<boolean> {
     try {
       await request(this.app.getHttpServer())
         .get('/auth/profile')
         .set(this.getAuthHeader(token))
         .expect(200);
-
       return true;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Obtener información del usuario autenticado
-   */
   async getUserInfo(token: string): Promise<any> {
     const response = await request(this.app.getHttpServer())
       .get('/auth/profile')
       .set(this.getAuthHeader(token))
       .expect(200);
-
     return response.body.data.user;
   }
 
-  /**
-   * Limpiar usuarios de prueba (opcional)
-   */
   async cleanupUsers(adminToken: string, userIds: string[]): Promise<void> {
     for (const userId of userIds) {
       try {
@@ -276,25 +200,16 @@ export class AuthHelper {
     }
   }
 
-  // MÉTODOS PRIVADOS
-
   private getDefaultPassword(role: UserRole): string {
     const passwords = {
       [UserRole.ADMIN]: 'admin123',
       [UserRole.EMPLEADO]: 'empleado123',
       [UserRole.CLIENTE]: 'cliente123',
-    };
-
+    } as Record<UserRole, string>;
     return passwords[role] || 'default123';
   }
 
-  private generateUniqueEmail(role: UserRole): string {
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(7);
-    return `test-${role.toLowerCase()}-${timestamp}-${randomSuffix}@test.com`;
-  }
-
-  // OBSOLETO: kept for compatibility
+  // OBSOLETO: kept for compatibility - usar DataFixtures.generateValidPlaca() o IdUniqueness.genPlaca()
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private generateValidPlaca(): string {
     const timestamp = Date.now().toString().slice(-6);

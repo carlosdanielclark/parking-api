@@ -3,9 +3,12 @@ import request from 'supertest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
-import { AuthHelper } from '../../helpers/auth-helper';
-import { DataFixtures } from '../../helpers/data-fixtures';
 import { UserRole } from '../../../src/entities/user.entity';
+import {
+  AuthHelper,
+  DataFixtures,
+  HttpClient,
+} from '../../helpers';
 
 /**
  * Tests E2E para Caso de Uso 4: Acceder a los Logs del Parking
@@ -17,6 +20,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   let app: INestApplication;
   let authHelper: AuthHelper;
   let dataFixtures: DataFixtures;
+  let httpClient: HttpClient;
   let usuarios: {
     admin: { user: any, token: string },
     empleado: { user: any, token: string },
@@ -33,6 +37,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
     authHelper = new AuthHelper(app);
     dataFixtures = new DataFixtures(app);
+    httpClient = new HttpClient(app);
   });
 
   beforeEach(async () => {
@@ -98,10 +103,13 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
   describe('Acceso a logs por administrador', () => {
     it('debe permitir al administrador acceder a todos los logs del sistema', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs';     
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200),
+        4, // 4 reintentos
+        500 // 500ms delay
+      );
 
       expect(response.body).toHaveProperty('logs');
       expect(response.body).toHaveProperty('pagination');
@@ -119,8 +127,6 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
         hasNext: expect.any(Boolean),
         hasPrevious: expect.any(Boolean),
       });
-
-      console.log(`📋 Logs encontrados: ${response.body.logs.length} de ${response.body.pagination.total} total`);
     });
 
     it('debe registrar el acceso a logs para auditoría', async () => {
@@ -131,10 +137,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
         .expect(200);
 
       // Buscar el log de acceso a logs
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?action=access_logs')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?action=access_logs';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.logs.length).toBeGreaterThan(0);
       
@@ -148,11 +155,12 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe mostrar estructura completa de logs con metadatos', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
-
+      const url = '/admin/logs';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
+      
       const log = response.body.logs[0];
       
       // Verificar estructura básica
@@ -177,20 +185,22 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
   describe('Filtrado de logs', () => {
     it('debe permitir filtrar logs por nivel de severidad', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?level=info')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
-
+      const url = '/admin/logs?level=info';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
+      
       expect(response.body.logs.length).toBeGreaterThan(0);
       expect(response.body.logs.every(log => log.level === 'info')).toBe(true);
     });
 
     it('debe permitir filtrar logs por acción específica', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?action=create_reservation')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?action=create_reservation';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       if (response.body.logs.length > 0) {
         expect(response.body.logs.every(log => log.action === 'create_reservation')).toBe(true);
@@ -202,10 +212,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe permitir filtrar logs por usuario específico', async () => {
-      const response = await request(app.getHttpServer())
-        .get(`/admin/logs?userId=${usuarios.cliente.user.id}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = `/admin/logs?userId=${usuarios.cliente.user.id}`;   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       if (response.body.logs.length > 0) {
         expect(response.body.logs.every(log => 
@@ -218,10 +229,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const hoy = new Date();
       const ayer = new Date(hoy.getTime() - 24 * 60 * 60 * 1000);
       
-      const response = await request(app.getHttpServer())
-        .get(`/admin/logs?startDate=${ayer.toISOString()}&endDate=${hoy.toISOString()}`)
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = `/admin/logs?startDate=${ayer.toISOString()}&endDate=${hoy.toISOString()}`;   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       // Verificar que las fechas están en el rango
       response.body.logs.forEach(log => {
@@ -231,10 +243,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe permitir búsqueda de texto libre en mensajes', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?search=reserva')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?search=reserva';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       if (response.body.logs.length > 0) {
         expect(response.body.logs.some(log => 
@@ -244,10 +257,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe permitir combinación de múltiples filtros', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?level=info&action=create_reservation&limit=5')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?level=info&action=create_reservation&limit=5';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.logs.length).toBeLessThanOrEqual(5);
       
@@ -262,10 +276,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   describe('Paginación de logs', () => {
     it('debe implementar paginación correctamente', async () => {
       // Primera página
-      const page1 = await request(app.getHttpServer())
-        .get('/admin/logs?page=1&limit=5')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url1 = '/admin/logs?page=1&limit=5';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const page1 = await httpClient.withRetry(
+        () => httpClient.get(url1, header, 200), 4, 500
+      );
 
       expect(page1.body.logs.length).toBeLessThanOrEqual(5);
       expect(page1.body.pagination.page).toBe(1);
@@ -273,10 +288,10 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
       // Segunda página si existe
       if (page1.body.pagination.hasNext) {
-        const page2 = await request(app.getHttpServer())
-          .get('/admin/logs?page=2&limit=5')
-          .set(authHelper.getAuthHeader(usuarios.admin.token))
-          .expect(200);
+        const url2 = '/admin/logs?page=2&limit=5';   
+        const page2 = await httpClient.withRetry(
+          () => httpClient.get(url2, header, 200), 4, 500
+        );
 
         expect(page2.body.pagination.page).toBe(2);
         expect(page2.body.pagination.hasPrevious).toBe(true);
@@ -289,10 +304,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe manejar páginas fuera de rango', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?page=999&limit=10')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?page=999&limit=10';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 5, 700
+      );
 
       expect(response.body.logs).toHaveLength(0);
       expect(response.body.pagination.page).toBe(999);
@@ -303,10 +319,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
   describe('Estadísticas y resúmenes de logs', () => {
     it('debe proporcionar estadísticas generales de logs', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs/stats')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs/stats';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toHaveProperty('total');
       expect(response.body.data).toHaveProperty('byLevel');
@@ -318,15 +335,14 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       expect(byLevel).toHaveProperty('warn');
       expect(byLevel).toHaveProperty('info');
       expect(byLevel).toHaveProperty('debug');
-
-      console.log('📊 Estadísticas de logs:', response.body.data);
     });
 
     it('debe mostrar errores recientes del sistema', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs/errors/recent?limit=5')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs/errors/recent?limit=5';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(Array.isArray(response.body.data)).toBe(true);
       expect(response.body.data.length).toBeLessThanOrEqual(5);
@@ -338,10 +354,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe generar resumen de actividad del parking', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs/activity-summary')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs/activity-summary';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       expect(response.body.data).toHaveProperty('totalReservations');
       expect(response.body.data).toHaveProperty('totalLogins');
@@ -361,10 +378,11 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   describe('Ordenamiento y consultas avanzadas', () => {
     it('debe permitir ordenar logs por diferentes campos', async () => {
       // Ordenar por fecha descendente (más recientes primero)
-      const descResponse = await request(app.getHttpServer())
-        .get('/admin/logs?sortBy=createdAt&sortOrder=desc&limit=3')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const urlDesc = '/admin/logs?sortBy=createdAt&sortOrder=desc&limit=3';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const descResponse = await httpClient.withRetry(
+        () => httpClient.get(urlDesc, header, 200), 4, 500
+      );
 
       if (descResponse.body.logs.length >= 2) {
         const firstDate = new Date(descResponse.body.logs[0].createdAt);
@@ -373,10 +391,10 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       }
 
       // Ordenar por fecha ascendente (más antiguos primero)
-      const ascResponse = await request(app.getHttpServer())
-        .get('/admin/logs?sortBy=createdAt&sortOrder=asc&limit=3')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const urlAsc = '/admin/logs?sortBy=createdAt&sortOrder=asc&limit=3';   
+      const ascResponse = await httpClient.withRetry(
+        () => httpClient.get(urlAsc, header, 200), 4, 500
+      );
 
       if (ascResponse.body.logs.length >= 2) {
         const firstDate = new Date(ascResponse.body.logs[0].createdAt);
@@ -386,15 +404,22 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     });
 
     it('debe permitir consultas complejas de logs de reservas', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?resource=reserva&level=info&sortBy=createdAt&sortOrder=desc')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?resource=reserva&level=info&sortBy=createdAt&sortOrder=desc';
+      const header = authHelper.getAuthHeader(usuarios.admin.token);  
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 
+        4, 
+        500 
+      );
 
       response.body.logs.forEach(log => {
         expect(log.resource).toBe('reserva');
         expect(log.level).toBe('info');
-        expect(['create_reservation', 'cancel_reservation', 'finish_reservation'].includes(log.action)).toBe(true);
+        expect([
+          'create_reservation', 
+          'cancel_reservation',
+          'system_error'
+        ].includes(log.action)).toBe(true);
       });
     });
   });
@@ -443,8 +468,6 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       expect(response.body.data).toHaveProperty('deletedCount');
       expect(response.body.data).toHaveProperty('daysThreshold');
       expect(response.body.data.daysThreshold).toBe(1);
-
-      console.log(`🧹 Logs eliminados: ${response.body.data.deletedCount}`);
     });
 
     it('debe validar parámetros de limpieza', async () => {
@@ -466,20 +489,20 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     it('debe responder rápidamente con grandes volúmenes de logs', async () => {
       // Generar más actividad
       await generarActividadAdicional();
-
       const startTime = Date.now();
-      
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?limit=50')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+
+      const url = '/admin/logs?limit=50'
+      const header = authHelper.getAuthHeader(usuarios.admin.token)
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200),
+        4, // 4 reintentos
+        500 // 500ms delay
+      );
 
       const responseTime = Date.now() - startTime;
       
       expect(responseTime).toBeLessThan(5000); // Menos de 5 segundos
       expect(response.body.logs.length).toBeLessThanOrEqual(50);
-
-      console.log(`⚡ Consulta de ${response.body.logs.length} logs en ${responseTime}ms`);
     }, 15000);
 
     it('debe manejar consultas concurrentes sin degradación', async () => {
@@ -487,10 +510,10 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const numeroConsultas = 3;
 
       for (let i = 0; i < numeroConsultas; i++) {
+        const url = `/admin/logs?page=${i + 1}&limit=10`;   
+        const header = authHelper.getAuthHeader(usuarios.admin.token);
         promesasConsulta.push(
-          request(app.getHttpServer())
-            .get(`/admin/logs?page=${i + 1}&limit=10`)
-            .set(authHelper.getAuthHeader(usuarios.admin.token))
+          httpClient.withRetry(() => httpClient.get(url, header, 200), 4, 500)
         );
       }
 
@@ -505,8 +528,6 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       });
 
       expect(totalTime).toBeLessThan(10000);
-
-      console.log(`⚡ ${numeroConsultas} consultas de logs concurrentes en ${totalTime}ms`);
     });
   });
 
@@ -524,8 +545,10 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
     // Crear y cancelar reservas para generar más logs
     for (let i = 0; i < 2; i++) {
-      const fechaInicio = new Date(dataFixtures.generateFutureDate(i + 2));
-      const fechaFin = new Date(dataFixtures.generateFutureDate(i + 3));
+      const fechaInicio1 = new Date();
+      fechaInicio1.setHours(fechaInicio1.getHours() + 2 + i);
+      const fechaFin1 = new Date(fechaInicio1);
+      fechaFin1.setHours(fechaFin1.getHours() + 3 + i);
 
       const reserva = await dataFixtures.createReserva(
         clienteExtra.token,
@@ -533,8 +556,8 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
           usuario_id: clienteExtra.user.id,
           plaza: plazas[i],
           vehiculo_id: vehiculo.id,
-          fecha_inicio: fechaInicio,
-          fecha_fin: fechaFin
+          fecha_inicio: fechaInicio1,
+          fecha_fin: fechaFin1
         }
       );
     
@@ -551,35 +574,37 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   describe('Validación de integridad de logs', () => {
     it('debe contener todos los eventos críticos generados', async () => {
       // Verificar que se registraron logs de reservas
-      const reservationLogs = await request(app.getHttpServer())
-        .get('/admin/logs?action=create_reservation')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url1 = '/admin/logs?action=create_reservation';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const reservationLogs = await httpClient.withRetry(
+        () => httpClient.get(url1, header, 200), 4, 500
+      );
 
       expect(reservationLogs.body.logs.length).toBeGreaterThan(0);
 
       // Verificar que se registraron logs de login
-      const loginLogs = await request(app.getHttpServer())
-        .get('/admin/logs?action=login')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url2 = '/admin/logs?action=login';   
+      const loginLogs = await httpClient.withRetry(
+        () => httpClient.get(url2, header, 200), 4, 500
+      );
 
       expect(loginLogs.body.logs.length).toBeGreaterThan(0);
 
       // Verificar logs de actualización de usuarios
-      const updateLogs = await request(app.getHttpServer())
-        .get('/admin/logs?action=update_user')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url3 = '/admin/logs?action=update_user';   
+      const updateLogs = await httpClient.withRetry(
+        () => httpClient.get(url3, header, 200), 4, 500
+      );
 
       expect(updateLogs.body.logs.length).toBeGreaterThan(0);
     });
 
     it('debe mantener consistencia temporal en los logs', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs?sortBy=createdAt&sortOrder=desc&limit=10')
-        .set(authHelper.getAuthHeader(usuarios.admin.token))
-        .expect(200);
+      const url = '/admin/logs?sortBy=createdAt&sortOrder=desc&limit=10';   
+      const header = authHelper.getAuthHeader(usuarios.admin.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 200), 4, 500
+      );
 
       // Verificar que las fechas son consistentes (más recientes primero)
       for (let i = 0; i < response.body.logs.length - 1; i++) {

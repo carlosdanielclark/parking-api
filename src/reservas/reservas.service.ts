@@ -34,6 +34,10 @@ export class ReservasService {
     this.logger.log(`Creando reserva para usuario ${currentUser.userId}`);
 
     try {
+      if (new Date(createReservaDto.fecha_fin) <= new Date(createReservaDto.fecha_inicio)) {
+        throw new BadRequestException('La fecha de fin debe ser posterior a la de inicio');
+      }
+      
       // Delegar la lógica compleja al servicio de transacciones
       const reservaCreada = await this.reservaTransactionService.createReservaWithTransaction(
         createReservaDto, 
@@ -77,7 +81,7 @@ export class ReservasService {
       limit?: number;
       offset?: number;
     }
-  ): Promise<{ reservas: Reserva[]; total: number }> {
+  ): Promise<Reserva[]> {
     this.logger.log(`Consultando reservas para usuario ${currentUser.userId} (${currentUser.role})`);
 
     try {
@@ -120,11 +124,9 @@ export class ReservasService {
         queryBuilder.offset(filters.offset);
       }
 
-      const [reservas, total] = await queryBuilder.getManyAndCount();
-
-      this.logger.log(`Se encontraron ${reservas.length} reservas de ${total} total`);
-
-      return { reservas, total };
+      const reservas = await queryBuilder.getMany();
+      this.logger.log(`Se encontraron ${reservas.length} reservas`);
+      return reservas;
 
     } catch (error) {
       this.logger.error(`Error al consultar reservas: ${error.message}`, error.stack);
@@ -325,4 +327,37 @@ export class ReservasService {
     
     return conflictingReservations === 0;
   }
+
+  /**
+   * Obtener todas las reservas activas (solo admin/empleado)
+   */
+  async findActive(): Promise<Reserva[]> {
+    this.logger.log('Consultando todas las reservas activas');
+
+    return this.reservaRepository.find({
+      where: { estado: EstadoReservaDTO.ACTIVA },
+      relations: ['usuario', 'plaza', 'vehiculo'],
+      order: { fecha_inicio: 'ASC' }
+    });
+  }
+
+  /**
+   * Obtener todas las reservas de un usuario específico
+   * Admin/empleado pueden ver cualquier usuario, clientes solo a sí mismos
+   */
+  async findByUser(usuarioId: string, currentUser: AuthenticatedUser): Promise<Reserva[]> {
+    this.logger.log(`Consultando reservas de usuario ${usuarioId} por ${currentUser.userId}`);
+
+    if (currentUser.role !== 'admin' && currentUser.role !== 'empleado' && currentUser.userId !== usuarioId) {
+      this.logger.warn(`Usuario ${currentUser.userId} intentó acceder a reservas de otro usuario`);
+      throw new ForbiddenException('No tiene permisos para acceder a estas reservas');
+    }
+
+    return this.reservaRepository.find({
+      where: { usuario_id: usuarioId },
+      relations: ['usuario', 'plaza', 'vehiculo'],
+      order: { fecha_inicio: 'DESC' }
+    });
+  }
+
 }

@@ -44,10 +44,14 @@ export class ReservaTransactionService {
 
     try {
       const { usuario_id, plaza_id, vehiculo_id, fecha_inicio, fecha_fin } = createReservaDto;
+      
+      const fechaInicio = new Date(fecha_inicio);
+      const fechaFin = new Date(fecha_fin);
+      const ahora = new Date();
 
       // Mantener validación coherente con ReservasService (doble check defensivo)
-      if (currentUser.userId !== usuario_id) {
-        throw new BadRequestException('No puede crear reservas para otros usuarios');
+      if (currentUser?.userId !== usuario_id && currentUser?.role !== UserRole.ADMIN) {
+        throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
       }
 
       // 1. Validar vehículo (pertenencia y existencia)
@@ -61,10 +65,13 @@ export class ReservaTransactionService {
 
       // 2. Validar plaza existe y está LIBRE con lock pesimista
       // EDITADO: Unificar a BadRequestException('La plaza no está disponible') para caso de indisponibilidad
-      const plaza = await queryRunner.manager.findOne(Plaza, {
-        where: { id: plaza_id, estado: EstadoPlaza.LIBRE },
-        lock: { mode: 'pessimistic_write' }
-      });
+      const plaza = await queryRunner.manager
+        .createQueryBuilder(Plaza, 'plaza')
+        .setLock('pessimistic_write')
+        .where('plaza.id = :plazaId', { plazaId: plaza_id })
+        .andWhere('plaza.estado = :estado', { estado: EstadoPlaza.LIBRE })
+        .getOne();
+        
       if (!plaza) {
         // EDITADO: El test de concurrencia espera un 400 cuando la plaza se ocupa concurrentemente
         throw new BadRequestException('La plaza no está disponible');
@@ -102,6 +109,15 @@ export class ReservaTransactionService {
         throw new BadRequestException('El vehículo ya tiene una reserva activa en el período solicitado');
       }
 
+      // ✅ Validación 1: fecha_inicio debe ser futura
+      if (fechaInicio <= ahora) {
+        throw new BadRequestException('fecha de inicio debe ser futura');
+      }
+      // ✅ Validación 2: fecha_fin debe ser posterior a fecha_inicio
+      if (fechaFin <= fechaInicio) {
+        throw new BadRequestException('fecha de fin debe ser posterior');
+      }
+
       // 5. Crear reserva (persistencia atómica)
       const nuevaReserva = queryRunner.manager.create(Reserva, {
         usuario_id,
@@ -133,7 +149,11 @@ export class ReservaTransactionService {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Error en transacción de reserva: ${error.message}`, error.stack);
 
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      if (
+        error instanceof BadRequestException || 
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new InternalServerErrorException('Error interno al crear la reserva');
