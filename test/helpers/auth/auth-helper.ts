@@ -39,10 +39,6 @@ export class AuthHelper {
           .expect(200);
       } catch (err: any) {
         const msg = String(err?.message ?? err);
-        logStepV3(`doLoginWithRetry intento ${attempt + 1}/${maxRetries} -> ${msg}`, {
-          etiqueta: 'AUTH_HELPER',
-          tipo: 'warning',
-        });
         if (attempt < maxRetries && /ECONNRESET/i.test(msg)) {
           attempt++;
           await new Promise((r) => setTimeout(r, delayMs));
@@ -64,7 +60,7 @@ export class AuthHelper {
       logStepV3('❌ Error creando vehículo en createClienteWithVehiculo', {
         etiqueta: 'AUTH_HELPER',
         tipo: 'error',
-      }, serverBody);
+      }, serverBody.message);
       throw error;
     }
   }
@@ -136,10 +132,6 @@ export class AuthHelper {
         return token;
       } catch (err: any) {
         attempts++;
-        logStepV3(`Reintento getAdminToken ${attempts}/${maxRetries}: ${err.message}`, {
-          etiqueta: 'AUTH_HELPER',
-          tipo: 'warning',
-        });
         if (attempts >= maxRetries) {
           throw new Error(`No se obtuvo token admin tras ${maxRetries} intentos: ${err.message}`);
         }

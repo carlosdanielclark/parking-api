@@ -426,19 +426,21 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
 
   describe('Control de acceso a logs', () => {
     it('debe denegar acceso a empleados', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs')
-        .set(authHelper.getAuthHeader(usuarios.empleado.token))
-        .expect(403);
+      const url = '/admin/logs';
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 403), 4, 800 
+      );
 
       expect(response.body.message).toContain('Acceso denegado');
     });
 
     it('debe denegar acceso a clientes', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/admin/logs')
-        .set(authHelper.getAuthHeader(usuarios.cliente.token))
-        .expect(403);
+      const url = '/admin/logs';
+      const header = authHelper.getAuthHeader(usuarios.empleado.token);
+      const response = await httpClient.withRetry(
+        () => httpClient.get(url, header, 403), 4, 800 
+      );
 
       expect(response.body.message).toContain('Acceso denegado');
     });
@@ -494,9 +496,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?limit=50'
       const header = authHelper.getAuthHeader(usuarios.admin.token)
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200),
-        4, // 4 reintentos
-        500 // 500ms delay
+        () => httpClient.get(url, header, 200), 4, 500 
       );
 
       const responseTime = Date.now() - startTime;

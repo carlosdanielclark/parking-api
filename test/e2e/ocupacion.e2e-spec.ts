@@ -17,7 +17,7 @@ describe('Ocupacion E2E Test', () => {
 
     const loginResponse = await request(app.getHttpServer())
       .post('/auth/login')
-      .send({ email: 'admin@example.com', password: 'password' });
+      .send({ email: 'admin@parking.com', password: 'admin123' });
     jwtToken = loginResponse.body.access_token;
   });
 

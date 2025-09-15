@@ -16,9 +16,6 @@ export class DataGenerator {
   static clearStaticState(): void {
     this.usedPlazaIds.clear();
     this.usedVehicleIds.clear();
-    logStepV3('🧹 Estado estático limpiado completamente', {
-        etiqueta: "CLEAR_STATE"
-    });
   }
 
   /**

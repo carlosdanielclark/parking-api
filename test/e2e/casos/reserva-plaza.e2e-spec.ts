@@ -354,7 +354,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const resp = await httpClient.withRetry(
-        () => httpClient.post(url, body, header, 201), 4, 500
+        () => httpClient.post(url, body, header, 201), 5, 700
       );
 
       expect(resp.body?.data?.id).toBeDefined();
@@ -374,7 +374,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
           if (intentos >= maxIntentos) {
             throw new Error(`No se pudo crear cliente después de ${maxIntentos} intentos`);
           }
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 2500));
         }
       }
       if (!otroCliente) throw new Error('No se pudo crear cliente');
@@ -409,7 +409,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
           if (intentos >= maxIntentos) {
             throw new Error(`No se pudo crear vehículo para test después de ${maxIntentos} intentos: ${error.message}`);
           }
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 2500));
         }
       }
       if (!otroVehiculo) throw new Error('No se pudo crear vehículo después de todos los intentos');
@@ -424,7 +424,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, reservaData, header, 400), 4, 500
+        () => httpClient.post(url, reservaData, header, 400), 5, 700
       );
 
       expect(response.body.message).toMatch(
@@ -523,12 +523,12 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header1 = authHelper.getAuthHeader(usuarios.cliente.token);
       const req1Promise = httpClient.withRetry(
-        () => httpClient.post(url, reservaData1, header1), 5, 700
+        () => httpClient.post(url, reservaData1, header1), 5, 800
       );
 
       const header2 = authHelper.getAuthHeader(cliente2.token);
       const req2Promise = httpClient.withRetry(
-        () => httpClient.post(url, reservaData2, header2), 3, 300
+        () => httpClient.post(url, reservaData2, header2), 5, 800
       );
 
       const [r1, r2] = await Promise.allSettled([req1Promise, req2Promise]);

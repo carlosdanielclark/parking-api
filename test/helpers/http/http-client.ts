@@ -34,17 +34,8 @@ export class HttpClient {
           ? await request_builder.expect(expectStatus)
           : await request_builder;
 
-        logStepV3(`HTTP POST ${path} → ${response.status} (reintento ${attempt})`, {
-          etiqueta: 'HTTP',
-          tipo: 'info'
-        });
         return response;
       } catch (err: any) {
-        logStepV3(
-          `HTTP POST ${path} failed → ${err.status || 'ERROR'} (reintento ${attempt})`,
-          { etiqueta: 'HTTP', tipo: 'warning' },
-          { message: err?.message, body: err?.response?.body, status: err?.status }
-        );
         if (/ECONNRESET|timeout/.test(String(err.message))) {
           attempt++;
           await new Promise(r => setTimeout(r, 700 * attempt));
@@ -73,12 +64,6 @@ export class HttpClient {
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
         : await request_builder;
-
-      logStepV3(`HTTP GET ${path} → ${response.status}`, {
-        etiqueta: 'HTTP',
-        tipo: 'info'
-      });
-
       return response;
     } catch (err: any) {
       logStepV3(`HTTP GET ${path} failed → ${err.status || 'ERROR'}`, {
@@ -110,12 +95,6 @@ export class HttpClient {
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
         : await request_builder;
-
-      logStepV3(`HTTP DELETE ${path} → ${response.status}`, {
-        etiqueta: 'HTTP',
-        tipo: 'info'
-      });
-
       return response;
     } catch (err: any) {
       logStepV3(`HTTP DELETE ${path} failed → ${err.status || 'ERROR'}`, {
@@ -149,12 +128,6 @@ export class HttpClient {
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
         : await request_builder;
-
-      logStepV3(`HTTP PATCH ${path} → ${response.status}`, {
-        etiqueta: 'HTTP',
-        tipo: 'info'
-      });
-
       return response;
     } catch (err: any) {
       logStepV3(`HTTP PATCH ${path} failed → ${err.status || 'ERROR'}`, {
@@ -188,11 +161,6 @@ export class HttpClient {
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
         : await request_builder;
-
-      logStepV3(`HTTP PUT ${path} → ${response.status}`, {
-        etiqueta: 'HTTP',
-        tipo: 'info'
-      });
 
       return response;
     } catch (err: any) {
