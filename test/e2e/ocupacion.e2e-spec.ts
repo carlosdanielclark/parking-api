@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
+import { AuthHelper } from '../../test/helpers';
 
 describe('Ocupacion E2E Test', () => {
   let app: INestApplication;
@@ -15,10 +16,8 @@ describe('Ocupacion E2E Test', () => {
     app = moduleRef.createNestApplication();
     await app.init();
 
-    const loginResponse = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: 'admin@parking.com', password: 'admin123' });
-    jwtToken = loginResponse.body.access_token;
+    const authHelper = new AuthHelper(app);
+    jwtToken = await authHelper.getAdminToken();
   });
 
   it('should get ocupacion completa data', () => {
@@ -27,8 +26,11 @@ describe('Ocupacion E2E Test', () => {
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200)
       .expect(res => {
-        expect(res.body.total).toBeDefined();
-        expect(res.body.ocupadas).toBeDefined();
+        // Verificar la estructura exacta confirmada
+        expect(res.body.data.total).toBeDefined();
+        expect(res.body.data.ocupadas).toBeDefined();
+        expect(res.body.data.libres).toBeDefined();
+        expect(res.body.data.porcentajeOcupacion).toBeDefined();
       });
   });
 
