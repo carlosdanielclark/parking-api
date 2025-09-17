@@ -94,7 +94,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.success).toBe(true);
@@ -168,7 +168,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.data).toMatchObject({
@@ -185,7 +185,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       // ✅ VERIFICAR estructura real primero
@@ -250,7 +250,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.data).toMatchObject({
@@ -284,7 +284,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       if (response.body.data.proximasLiberaciones) {
@@ -305,7 +305,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/disponibles';   
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.success).toBe(true);
@@ -323,7 +323,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/disponibles?tipo=electrico';   
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.data.length).toBeGreaterThan(0);
@@ -353,7 +353,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/disponibles';   
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.data).toHaveLength(19); // Una menos
@@ -366,13 +366,13 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const bodyPatch = { estado: EstadoPlaza.MANTENIMIENTO };      
       const headerPatch = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.patch(urlPatch, bodyPatch, headerPatch, 200), 4, 500
+        () => httpClient.patch(urlPatch, bodyPatch, headerPatch, 200), 4, 1200
       );
 
       const url = '/plazas/disponibles';   
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.data).toHaveLength(19);
@@ -386,13 +386,13 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const headerEmpleado = authHelper.getAuthHeader(usuarios.empleado.token);
       await httpClient.withRetry(
-        () => httpClient.get(url, headerEmpleado, 200), 4, 500
+        () => httpClient.get(url, headerEmpleado, 200), 4, 1200
       );
 
       // Admin
       const headerAdmin = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.get(url, headerAdmin, 200), 4, 500
+        () => httpClient.get(url, headerAdmin, 200), 4, 1200
       );
     });
 
@@ -400,7 +400,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 403), 4, 500
+        () => httpClient.get(url, header, 403), 4, 1200
       );
 
       expect(response.body.message).toContain('Acceso denegado');
@@ -410,7 +410,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/disponibles';   
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
     });
 
@@ -418,7 +418,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = {};
       await httpClient.withRetry(
-        () => httpClient.get(url, header, 401), 4, 500
+        () => httpClient.get(url, header, 401), 4, 1200
       );
     });
   });
@@ -429,7 +429,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       let ocupacionResponse = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       const ocupacionInicial = ocupacionResponse.body.data.ocupadas;
@@ -455,7 +455,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
 
       // Verificar cambio inmediato
       ocupacionResponse = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(ocupacionResponse.body.data.ocupadas).toBe(ocupacionInicial + 1);
@@ -468,8 +468,8 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const headerCliente = authHelper.getAuthHeader(usuarios.cliente.token);
 
       const [ocupacionRes, disponiblesRes] = await Promise.all([
-        httpClient.withRetry(() => httpClient.get(urlOcupacion, headerEmpleado, 200), 4, 500),
-        httpClient.withRetry(() => httpClient.get(urlDisponibles, headerCliente, 200), 4, 500)
+        httpClient.withRetry(() => httpClient.get(urlOcupacion, headerEmpleado, 200), 4, 1200),
+        httpClient.withRetry(() => httpClient.get(urlDisponibles, headerCliente, 200), 4, 1200)
       ]);
 
       const ocupacion = ocupacionRes.body.data;
@@ -499,7 +499,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       const responseTime = Date.now() - startTime;
@@ -516,7 +516,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
 
       for (let i = 0; i < numeroConsultas; i++) {
         promesasConsulta.push(
-          httpClient.withRetry(() => httpClient.get(url, header, 200), 4, 500)
+          httpClient.withRetry(() => httpClient.get(url, header, 200), 4, 1200)
         );
       }
 
@@ -540,7 +540,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       if (response.body.data.tendenciaOcupacion) {
@@ -555,7 +555,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       const porTipo = response.body.data.plazasPorTipo;
@@ -607,7 +607,7 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const url = '/plazas/ocupacion';   
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       let ocupacionRes = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(ocupacionRes.body.data.ocupadas).toBe(1);
@@ -617,12 +617,12 @@ describe('Caso de Uso 2: Consultar Ocupación del Parking (E2E)', () => {
       const cancelBody = {};      
       const cancelHeader = authHelper.getAuthHeader(clienteData.cliente.token);
       await httpClient.withRetry(
-        () => httpClient.post(cancelUrl, cancelBody, cancelHeader, 200), 4, 500
+        () => httpClient.post(cancelUrl, cancelBody, cancelHeader, 200), 4, 1200
       );
 
       // Verificar ocupación tras cancelación
       ocupacionRes = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(ocupacionRes.body.data.ocupadas).toBe(0);

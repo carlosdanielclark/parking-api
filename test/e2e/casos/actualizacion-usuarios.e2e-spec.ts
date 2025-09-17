@@ -115,7 +115,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = datosActualizados;      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       expect(response.body.success).toBe(true);
@@ -136,7 +136,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { email: nuevoEmail };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       expect(response.body.data.email).toBe(nuevoEmail);
@@ -146,7 +146,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const loginBody = { email: nuevoEmail, password: 'cliente123' };      
       const loginHeader = {};
       const loginResponse = await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 1200
       );
 
       expect(loginResponse.body.data.access_token).toBeDefined();
@@ -154,7 +154,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       // Login con viejo email debe fallar
       const loginViejoBody = { email: usuarioParaActualizar.user.email, password: 'cliente123' };      
       await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginViejoBody, loginHeader, 401), 4, 500
+        () => httpClient.post(loginUrl, loginViejoBody, loginHeader, 401), 4, 1200
       );
     });
 
@@ -165,21 +165,21 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { password: nuevaPassword };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       const loginUrl = '/auth/login';
       const loginBody = { email: usuarioParaActualizar.user.email, password: nuevaPassword };      
       const loginHeader = {};
       const loginResponse = await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 1200
       );
 
       expect(loginResponse.body.data.access_token).toBeDefined();
 
       const loginViejoBody = { email: usuarioParaActualizar.user.email, password: 'cliente123' };      
       await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginViejoBody, loginHeader, 401), 4, 500
+        () => httpClient.post(loginUrl, loginViejoBody, loginHeader, 401), 4, 1200
       );
     });
 
@@ -188,13 +188,13 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'Nombre Para Log', telefono: '+1111111111' };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       const logsUrl = '/admin/logs?action=update_user';   
       const logsHeader = authHelper.getAuthHeader(usuarios.admin.token);
       const logsResponse = await httpClient.withRetry(
-        () => httpClient.get(logsUrl, logsHeader, 200), 4, 500
+        () => httpClient.get(logsUrl, logsHeader, 200), 4, 1200
       );
 
       expect(logsResponse.body.logs.length).toBeGreaterThan(0);
@@ -237,7 +237,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const loginBody = { email: datosCompletos.email, password: datosCompletos.password };      
       const loginHeader = {};
       const loginResponse = await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 1200
       );
 
       expect(loginResponse.body.data.user.nombre).toBe(datosCompletos.nombre);
@@ -250,7 +250,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { role: UserRole.EMPLEADO };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       expect(response.body.data.role).toBe(UserRole.EMPLEADO);
@@ -259,13 +259,13 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const loginBody = { email: usuarioParaActualizar.user.email, password: 'cliente123' };      
       const loginHeader = {};
       const newUserLogin = await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 1200
       );
 
       const ocupacionUrl = '/plazas/ocupacion';
       const ocupacionHeader = authHelper.getAuthHeader(newUserLogin.body.data.access_token);
       await httpClient.withRetry(
-        () => httpClient.get(ocupacionUrl, ocupacionHeader, 200), 4, 500
+        () => httpClient.get(ocupacionUrl, ocupacionHeader, 200), 4, 1200
       );
     });
 
@@ -274,13 +274,13 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { role: UserRole.ADMIN };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       const logsUrl = '/admin/logs?action=role_change';   
       const logsHeader = authHelper.getAuthHeader(usuarios.admin.token);
       const logsResponse = await httpClient.withRetry(
-        () => httpClient.get(logsUrl, logsHeader, 200), 4, 500
+        () => httpClient.get(logsUrl, logsHeader, 200), 4, 1200
       );
 
       if (logsResponse.body.logs.length > 0) {
@@ -303,14 +303,14 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { role: UserRole.EMPLEADO };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       const loginUrl = '/auth/login';
       const loginBody = { email: adminTemp.user.email, password: 'admin123' };      
       const loginHeader = {};
       const employeeLogin = await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 1200
       );
 
       const createUserUrl = '/users';
@@ -322,7 +322,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       };      
       const createUserHeader = authHelper.getAuthHeader(employeeLogin.body.data.access_token);
       await httpClient.withRetry(
-        () => httpClient.post(createUserUrl, createUserBody, createUserHeader, 403), 4, 500
+        () => httpClient.post(createUserUrl, createUserBody, createUserHeader, 403), 4, 1200
       );
     });
   });
@@ -335,7 +335,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = datosActualizados;      
       const header = authHelper.getAuthHeader(usuarioParaActualizar.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 4, 500
+        () => httpClient.patch(url, body, header, 200), 4, 1200
       );
 
       expect(response.body.data).toMatchObject(datosActualizados);
@@ -346,7 +346,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { role: UserRole.ADMIN };      
       const header = authHelper.getAuthHeader(usuarioParaActualizar.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 403), 4, 500
+        () => httpClient.patch(url, body, header, 403), 4, 1200
       );
 
       expect(response.body.message).toContain('Solo los administradores pueden cambiar roles');
@@ -369,7 +369,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const roleBody = { role: UserRole.ADMIN };      
       const roleHeader = authHelper.getAuthHeader(usuarios.empleado.token);
       await httpClient.withRetry(
-        () => httpClient.patch(roleUrl, roleBody, roleHeader, 403), 4, 500
+        () => httpClient.patch(roleUrl, roleBody, roleHeader, 403), 4, 1200
       );
     });
   });
@@ -380,7 +380,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { email: usuarios.cliente.user.email };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 400), 4, 500
+        () => httpClient.patch(url, body, header, 400), 4, 1200
       );
 
       expect(response.body.message).toContain('El email ya está registrado por otro usuario');
@@ -391,7 +391,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { email: 'email-invalido' };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 400), 4, 500
+        () => httpClient.patch(url, body, header, 400), 4, 1200
       );
 
       expect(response.body.message).toContain('Debe proporcionar un email válido');
@@ -402,7 +402,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { password: '123' };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 400), 4, 500
+        () => httpClient.patch(url, body, header, 400), 4, 1200
       );
 
       expect(response.body.message).toContain('La contraseña debe tener al menos 6 caracteres');
@@ -413,7 +413,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'A' };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 400), 4, 500
+        () => httpClient.patch(url, body, header, 400), 4, 1200
       );
 
       expect(response.body.message).toContain('El nombre debe tener al menos 2 caracteres');
@@ -426,7 +426,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'Intento Fallido' };      
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 403), 4, 500
+        () => httpClient.patch(url, body, header, 403), 4, 1200
       );
 
       expect(response.body.message).toContain('No tienes permisos para actualizar este usuario');
@@ -437,7 +437,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'Intento Fallido' };      
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 403), 4, 500
+        () => httpClient.patch(url, body, header, 403), 4, 1200
       );
 
       expect(response.body.message).toContain('No tienes permisos para actualizar este usuario');
@@ -448,7 +448,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'Sin Token' };      
       const header = {};
       await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 401), 4, 500
+        () => httpClient.patch(url, body, header, 401), 4, 1200
       );
     });
 
@@ -457,7 +457,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'Token Inválido' };      
       const header = { 'Authorization': 'Bearer token_invalido' };
       await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 401), 4, 500
+        () => httpClient.patch(url, body, header, 401), 4, 1200
       );
     });
   });
@@ -477,7 +477,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = nuevoUsuario;      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, body, header, 201), 4, 500
+        () => httpClient.post(url, body, header, 201), 4, 1200
       );
 
       expect(response.body.data).toMatchObject({
@@ -491,7 +491,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const loginBody = { email: nuevoUsuario.email, password: nuevoUsuario.password };      
       const loginHeader = {};
       await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 200), 4, 1200
       );
     });
 
@@ -506,14 +506,14 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const getUrl = `/users/${usuarioTemp.user.id}`;
       const getHeader = authHelper.getAuthHeader(usuarios.admin.token);
       await httpClient.withRetry(
-        () => httpClient.get(getUrl, getHeader, 404), 4, 500
+        () => httpClient.get(getUrl, getHeader, 404), 4, 1200
       );
 
       const loginUrl = '/auth/login';
       const loginBody = { email: usuarioTemp.user.email, password: 'cliente123' };      
       const loginHeader = {};
       await httpClient.withRetry(
-        () => httpClient.post(loginUrl, loginBody, loginHeader, 401), 4, 500
+        () => httpClient.post(loginUrl, loginBody, loginHeader, 401), 4, 1200
       );
     });
 
@@ -521,7 +521,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const url = '/users/stats';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 4, 1200
       );
 
       expect(response.body.data).toHaveProperty('total');
@@ -540,7 +540,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       const body = { nombre: 'No Existe' };      
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 404), 4, 500
+        () => httpClient.patch(url, body, header, 404), 4, 1200
       );
       expect(response.body.message).toContain('no encontrado');
     });

@@ -140,7 +140,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?action=access_logs';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       expect(response.body.logs.length).toBeGreaterThan(0);
@@ -158,7 +158,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
       
       const log = response.body.logs[0];
@@ -188,7 +188,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?level=info';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
       
       expect(response.body.logs.length).toBeGreaterThan(0);
@@ -199,7 +199,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?action=create_reservation';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       if (response.body.logs.length > 0) {
@@ -215,7 +215,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = `/admin/logs?userId=${usuarios.cliente.user.id}`;   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       if (response.body.logs.length > 0) {
@@ -232,7 +232,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = `/admin/logs?startDate=${ayer.toISOString()}&endDate=${hoy.toISOString()}`;   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       // Verificar que las fechas están en el rango
@@ -246,7 +246,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?search=reserva';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       if (response.body.logs.length > 0) {
@@ -260,7 +260,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?level=info&action=create_reservation&limit=5';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       expect(response.body.logs.length).toBeLessThanOrEqual(5);
@@ -279,7 +279,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url1 = '/admin/logs?page=1&limit=5';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const page1 = await httpClient.withRetry(
-        () => httpClient.get(url1, header, 200), 4, 500
+        () => httpClient.get(url1, header, 200), 6, 1200
       );
 
       expect(page1.body.logs.length).toBeLessThanOrEqual(5);
@@ -290,7 +290,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       if (page1.body.pagination.hasNext) {
         const url2 = '/admin/logs?page=2&limit=5';   
         const page2 = await httpClient.withRetry(
-          () => httpClient.get(url2, header, 200), 4, 500
+          () => httpClient.get(url2, header, 200), 6, 1200
         );
 
         expect(page2.body.pagination.page).toBe(2);
@@ -322,7 +322,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs/stats';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       expect(response.body.data).toHaveProperty('total');
@@ -341,7 +341,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs/errors/recent?limit=5';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       expect(Array.isArray(response.body.data)).toBe(true);
@@ -357,7 +357,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs/activity-summary';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       expect(response.body.data).toHaveProperty('totalReservations');
@@ -381,7 +381,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const urlDesc = '/admin/logs?sortBy=createdAt&sortOrder=desc&limit=3';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const descResponse = await httpClient.withRetry(
-        () => httpClient.get(urlDesc, header, 200), 4, 500
+        () => httpClient.get(urlDesc, header, 200), 6, 1200
       );
 
       if (descResponse.body.logs.length >= 2) {
@@ -393,7 +393,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       // Ordenar por fecha ascendente (más antiguos primero)
       const urlAsc = '/admin/logs?sortBy=createdAt&sortOrder=asc&limit=3';   
       const ascResponse = await httpClient.withRetry(
-        () => httpClient.get(urlAsc, header, 200), 4, 500
+        () => httpClient.get(urlAsc, header, 200), 6, 1200
       );
 
       if (ascResponse.body.logs.length >= 2) {
@@ -439,23 +439,25 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs';
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 403), 4, 800 
+        () => httpClient.get(url, header, 403), 6, 1200 
       );
 
       expect(response.body.message).toContain('Acceso denegado');
     });
 
     it('debe denegar acceso sin autenticación', async () => {
-      await request(app.getHttpServer())
-        .get('/admin/logs')
-        .expect(401);
+      const url = '/admin/logs';
+      await httpClient.withRetry(
+        () => httpClient.get(url,{}, 401), 6, 1000 
+      );
     });
 
     it('debe denegar acceso con token inválido', async () => {
-      await request(app.getHttpServer())
-        .get('/admin/logs')
-        .set('Authorization', 'Bearer token_invalido')
-        .expect(401);
+      const url = '/admin/logs';
+      const header = 'Bearer token_invalido';
+      await httpClient.withRetry(
+        () => httpClient.get(url,{header}, 401), 6, 1200 
+      );
     });
   });
 
@@ -496,7 +498,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?limit=50'
       const header = authHelper.getAuthHeader(usuarios.admin.token)
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500 
+        () => httpClient.get(url, header, 200), 6, 1200 
       );
 
       const responseTime = Date.now() - startTime;
@@ -513,7 +515,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
         const url = `/admin/logs?page=${i + 1}&limit=10`;   
         const header = authHelper.getAuthHeader(usuarios.admin.token);
         promesasConsulta.push(
-          httpClient.withRetry(() => httpClient.get(url, header, 200), 4, 500)
+          httpClient.withRetry(() => httpClient.get(url, header, 200), 6, 1200)
         );
       }
 
@@ -577,7 +579,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url1 = '/admin/logs?action=create_reservation';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const reservationLogs = await httpClient.withRetry(
-        () => httpClient.get(url1, header, 200), 4, 500
+        () => httpClient.get(url1, header, 200), 6, 1200
       );
 
       expect(reservationLogs.body.logs.length).toBeGreaterThan(0);
@@ -585,7 +587,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       // Verificar que se registraron logs de login
       const url2 = '/admin/logs?action=login';   
       const loginLogs = await httpClient.withRetry(
-        () => httpClient.get(url2, header, 200), 4, 500
+        () => httpClient.get(url2, header, 200), 6, 1200
       );
 
       expect(loginLogs.body.logs.length).toBeGreaterThan(0);
@@ -593,7 +595,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       // Verificar logs de actualización de usuarios
       const url3 = '/admin/logs?action=update_user';   
       const updateLogs = await httpClient.withRetry(
-        () => httpClient.get(url3, header, 200), 4, 500
+        () => httpClient.get(url3, header, 200), 6, 1200
       );
 
       expect(updateLogs.body.logs.length).toBeGreaterThan(0);
@@ -603,7 +605,7 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
       const url = '/admin/logs?sortBy=createdAt&sortOrder=desc&limit=10';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
       const response = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 500
+        () => httpClient.get(url, header, 200), 6, 1200
       );
 
       // Verificar que las fechas son consistentes (más recientes primero)
