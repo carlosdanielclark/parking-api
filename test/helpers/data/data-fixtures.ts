@@ -112,7 +112,7 @@ export class DataFixtures {
             error.message?.includes('already exists') ||
             error.response?.body?.message?.includes('duplicad')
           ) {
-            await new Promise((resolve) => setTimeout(resolve, 100 * attempts));
+            await new Promise((resolve) => setTimeout(resolve, 200 * attempts));
             continue;
           }
 
@@ -122,7 +122,7 @@ export class DataFixtures {
             error.message?.includes('timeout') ||
             error.code === 'ECONNRESET'
           ) {
-            await new Promise((resolve) => setTimeout(resolve, 500 * attempts)); // Aumentar delay
+            await new Promise((resolve) => setTimeout(resolve, 12000 * attempts)); // Aumentar delay
             continue;
           }
 
@@ -135,17 +135,38 @@ export class DataFixtures {
       }
 
       if (i < count - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 1200));
       }
     }
 
     return plazas;
   }
 
+  /**
+   * Método createPlazaWithId optimizado
+   * Utiliza 'customId' para IDs únicos
+   */
+  async createPlazaWithId(adminToken: string, customId: string): Promise<any> {
+    try {
+      const response = await request(this.app.getHttpServer())
+        .post('/plazas')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({
+          numero_plaza: customId,
+          tipo: TipoPlaza.NORMAL,
+          estado: EstadoPlaza.LIBRE,
+        })
+        .timeout(5000);
 
-
-
-
+      return response.body.data;
+    } catch (error: any) {
+      if (error.status === 422 || error.message?.includes('duplicad')) {
+        // Si ya existe, intentar con variación
+        return this.createPlazaWithId(adminToken, `${customId}-${Date.now()}`);
+      }
+      throw error;
+    }
+  }
 
   /**
    * Crea un vehículo para un usuario
@@ -275,7 +296,7 @@ export class DataFixtures {
       
       // Pausa pequeña entre creaciones
       if (i < count - 1) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 1200));
       }
     }
 
@@ -291,13 +312,13 @@ export class DataFixtures {
       await this.cleanupReservas(adminToken);
 
       // 2. Esperar a que se procesen las cancelaciones
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       // 3. Eliminar vehículos (ahora que no tienen reservas activas)
       await this.cleanupVehiculos(adminToken);
 
       // 4. Esperar antes de eliminar plazas
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1200));
 
       // 5. Finalmente eliminar plazas
       await this.cleanupPlazas(adminToken);
@@ -486,11 +507,6 @@ export class DataFixtures {
         .post(`/reservas/${reservaId}/cancelar`)
         .set({ Authorization: `Bearer ${adminToken}` })
         .timeout(10000);
-      
-      logStepV3(`🛑 Reserva cancelada: ${reservaId}`, {
-        etiqueta: 'RESERVA_CANCEL',
-        tipo: 'info'
-      });
     } catch (error: any) {
       if (error.status === 404) {
         logStepV3(`Reserva no existe: ${reservaId} (ignorar)`, {

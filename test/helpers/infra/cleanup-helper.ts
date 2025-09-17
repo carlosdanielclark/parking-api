@@ -13,42 +13,30 @@ export class CleanupHelper {
    * Limpieza completa y exhaustiva de base de datos
    */
   static async cleanupAll(dataSource: DataSource): Promise<void> {
-    try {
-      logStepV3('🧹 Iniciando limpieza exhaustiva de base de datos', {
-        etiqueta: 'CLEANUP',
-        tipo: 'info'
-      });
-      
+    try {     
       // 1. Limpiar estado estático PRIMERO
       DataGenerator.clearStaticState();
       
       // 2. Ejecutar limpieza de base de datos en orden correcto
       await dataSource.query('SET session_replication_role = replica;');
       
-      // Orden correcto: FK dependencies primero
+      // Orden correcto: FK dependencies primero - USAR "usuarios" y "cliente" en minúscula
       await dataSource.query('DELETE FROM reservas;');
       await dataSource.query('DELETE FROM vehiculos;');  
       await dataSource.query('DELETE FROM plazas;');
-      await dataSource.query('DELETE FROM users WHERE role = $1;', ['CLIENTE']);
+      await dataSource.query('DELETE FROM usuarios WHERE role = $1;', ['cliente']); // ← Cambiado a minúscula
       
       // 3. Resetear secuencias para evitar IDs acumulados
+      // Verificar nombres exactos de secuencias basado en tu estructura
       await dataSource.query('ALTER SEQUENCE IF EXISTS reservas_id_seq RESTART WITH 1;');
       await dataSource.query('ALTER SEQUENCE IF EXISTS vehiculos_id_seq RESTART WITH 1;');
       await dataSource.query('ALTER SEQUENCE IF EXISTS plazas_id_seq RESTART WITH 1;');
-      await dataSource.query('ALTER SEQUENCE IF EXISTS users_id_seq RESTART WITH 1;');
+      // La secuencia para usuarios probablemente no existe ya que usas UUID
+      // await dataSource.query('ALTER SEQUENCE IF EXISTS usuarios_id_seq RESTART WITH 1;');
       
       await dataSource.query('SET session_replication_role = DEFAULT;');
-      
-      logStepV3('✅ Limpieza exhaustiva completada exitosamente', {
-        etiqueta: 'CLEANUP',
-        tipo: 'info'
-      });
-      
+    
     } catch (error: any) {
-      logStepV3(`❌ Error en limpieza: ${error.message}`, {
-        etiqueta: 'CLEANUP',
-        tipo: 'error'
-      });
       throw error;
     }
   }
@@ -235,11 +223,6 @@ export class CleanupHelper {
       await dataSource.query('DELETE FROM users WHERE email LIKE \'%test%\' OR email LIKE \'%@test.com\';');
       
       await dataSource.query('SET session_replication_role = DEFAULT;');
-
-      logStepV3('✅ Limpieza de emergencia completada', {
-        etiqueta: 'EMERGENCY_CLEANUP',
-        tipo: 'info'
-      });
 
     } catch (error: any) {
       logStepV3(`❌ Error crítico en limpieza de emergencia: ${error.message}`, {

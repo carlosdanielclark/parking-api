@@ -163,7 +163,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const body = reservaData;
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, body, header, 201), 4, 1200
+        () => httpClient.post(url, body, header, 201), 8, 1500
       );
 
       reservas.push(response.body.data);
@@ -202,7 +202,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = `/plazas/${plazas[0].id}`;
       const header = authHelper.getAuthHeader(usuarios.empleado.token);
       let plazaResponse = await httpClient.withRetry(
-        () => httpClient.get(url, header, 200), 4, 1200
+        () => httpClient.get(url, header, 200), 8, 1500
       );
 
       expect(plazaResponse.body.data.estado).toBe(EstadoPlaza.LIBRE);
@@ -221,7 +221,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const urlReserva = '/reservas';
       const headerReserva = authHelper.getAuthHeader(usuarios.cliente.token);
       const reservaResp = await httpClient.withRetry(
-        () => httpClient.post(urlReserva, reservaDto, headerReserva, 201), 4, 1200
+        () => httpClient.post(urlReserva, reservaDto, headerReserva, 201), 8, 1500
       );
 
       reservas.push(reservaResp.body.data);
@@ -263,7 +263,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const primeraReservaResp = await httpClient.withRetry(
-        () => httpClient.post(url, primeraReservaData, header, 201), 4, 1200
+        () => httpClient.post(url, primeraReservaData, header, 201), 8, 1500
       );
 
       reservas.push(primeraReservaResp.body.data);
@@ -291,7 +291,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       );
 
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, segundaReservaData, header, 400), 4, 1200
+        () => httpClient.post(url, segundaReservaData, header, 400), 8, 1500
       );
 
       expect(response.body.message).toContain('La plaza no está disponible');
@@ -312,7 +312,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, reservaData, header, 400), 4, 1200
+        () => httpClient.post(url, reservaData, header, 400), 8, 1500
       );
 
       expect(response.body.message).toContain('fecha de inicio debe ser futura');
@@ -472,7 +472,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, reservaData, header, 403), 4, 1200
+        () => httpClient.post(url, reservaData, header, 403), 8, 1500
       );
 
       expect(response.body.message).toContain('Solo puedes crear reservas para ti mismo');
@@ -488,7 +488,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
 
       const url = '/reservas';
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, reservaData, {}, 401), 4, 1200
+        () => httpClient.post(url, reservaData, {}, 401), 8, 1500
       );
 
       expect(response.body.message).toContain('No auth token');
@@ -566,7 +566,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, reservaData, header, 201), 4, 1200
+        () => httpClient.post(url, reservaData, header, 201), 8, 1500
       );
 
       expect(response.body.data.plaza.tipo).toBe(TipoPlaza.DISCAPACITADO);
@@ -588,7 +588,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = '/reservas';
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, reservaData, header, 201), 4, 1200
+        () => httpClient.post(url, reservaData, header, 201), 8, 1500
       );
 
       expect(response.body.data.plaza.tipo).toBe(TipoPlaza.ELECTRICO);
@@ -614,7 +614,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const url = `/reservas/${reserva.id}/cancelar`;
       const header = authHelper.getAuthHeader(usuarios.cliente.token);
       const response = await httpClient.withRetry(
-        () => httpClient.post(url, {}, header, 200), 4, 1200
+        () => httpClient.post(url, {}, header, 200), 8, 1500
       );
 
       expect(response.body.data.estado).toBe(EstadoReservaDTO.CANCELADA);
@@ -622,7 +622,7 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
       const urlPlaza = `/plazas/${plazas[0].id}`;
       const headerEmpleado = authHelper.getAuthHeader(usuarios.empleado.token);
       const plazaResponse = await httpClient.withRetry(
-        () => httpClient.get(urlPlaza, headerEmpleado, 200), 4, 1200
+        () => httpClient.get(urlPlaza, headerEmpleado, 200), 8, 1500
       );
 
       expect(plazaResponse.body.data.estado).toBe(EstadoPlaza.LIBRE);

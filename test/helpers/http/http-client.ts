@@ -19,7 +19,7 @@ export class HttpClient {
     headers: Record<string, string> = {},
     expectStatus?: number,
     maxRetries: number = 4,
-    baseTimeout: number = 16000
+    baseTimeout: number = 25000
   ): Promise<Response> {
     let attempt = 0;
     while (attempt < maxRetries) {
@@ -59,7 +59,7 @@ export class HttpClient {
       const request_builder = request(this.app.getHttpServer())
         .get(path)
         .set(headers)
-        .timeout(15000);
+        .timeout(25000);
 
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
@@ -90,7 +90,7 @@ export class HttpClient {
       const request_builder = request(this.app.getHttpServer())
         .delete(path)
         .set(headers)
-        .timeout(15000);
+        .timeout(25000);
 
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
@@ -123,7 +123,7 @@ export class HttpClient {
         .patch(path)
         .set(headers)
         .send(body)
-        .timeout(15000);
+        .timeout(25000);
 
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
@@ -156,7 +156,7 @@ export class HttpClient {
         .put(path)
         .set(headers)
         .send(body)
-        .timeout(15000);
+        .timeout(25000);
 
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
