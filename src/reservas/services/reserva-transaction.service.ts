@@ -50,7 +50,8 @@ export class ReservaTransactionService {
       const ahora = new Date();
 
       // Mantener validación coherente con ReservasService (doble check defensivo)
-      if (currentUser?.userId !== usuario_id && currentUser?.role !== UserRole.ADMIN) {
+      if (!currentUser?.userId || currentUser.userId !== usuario_id) {
+        this.logger.warn(`Intento de crear reserva para otro usuario. Auth=${currentUser?.userId} Payload=${usuario_id}`);
         throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
       }
 
@@ -64,7 +65,7 @@ export class ReservaTransactionService {
       }
 
       // 2. Validar plaza existe y está LIBRE con lock pesimista
-      // EDITADO: Unificar a BadRequestException('La plaza no está disponible') para caso de indisponibilidad
+      // Unificar a BadRequestException('La plaza no está disponible') para caso de indisponibilidad
       const plaza = await queryRunner.manager
         .createQueryBuilder(Plaza, 'plaza')
         .setLock('pessimistic_write')
@@ -73,12 +74,12 @@ export class ReservaTransactionService {
         .getOne();
         
       if (!plaza) {
-        // EDITADO: El test de concurrencia espera un 400 cuando la plaza se ocupa concurrentemente
+        // El test de concurrencia espera un 400 cuando la plaza se ocupa concurrentemente
         throw new BadRequestException('La plaza no está disponible');
       }
 
       // 3. Verificar solapamiento de reservas existentes en la misma plaza (bloqueo pesimista)
-      // EDITADO: Mantener setLock('pessimistic_write') para asegurar consistencia bajo concurrencia
+      // Mantener setLock('pessimistic_write') para asegurar consistencia bajo concurrencia
       const solapamiento = await queryRunner.manager
         .createQueryBuilder(Reserva, 'reserva')
         .setLock('pessimistic_write')
@@ -347,12 +348,12 @@ export class ReservaTransactionService {
     });
 
     if (!plaza) {
-      // EDITADO: Unificar semántica de indisponibilidad
+      // Unificar semántica de indisponibilidad
       throw new BadRequestException('La plaza no está disponible');
     }
 
     if (plaza.estado !== EstadoPlaza.LIBRE) {
-      // EDITADO: Homologar mensaje y tipo de error
+      // Homologar mensaje y tipo de error
       throw new BadRequestException('La plaza no está disponible');
     }
 

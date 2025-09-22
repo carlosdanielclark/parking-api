@@ -147,7 +147,7 @@ export class UsersService {
     this.logger.log(`Actualizando usuario ${id} por usuario ${currentUser.userId} (${currentUser.role})`);
 
     // Verificar permisos: solo admin puede actualizar cualquier usuario
-    if (currentUser.role !== UserRole.ADMIN && currentUser.userId !== id) {
+    if (currentUser.role !== UserRole.ADMIN) {
       this.logger.warn(`Acceso denegado: usuario ${currentUser.userId} intentó actualizar usuario ${id}`);
       throw new ForbiddenException('No tienes permisos para actualizar este usuario');
     }
@@ -191,13 +191,22 @@ export class UsersService {
         }
       }
 
-      // ✅ CRÍTICO: Logging del cambio de rol ANTES de la actualización
-      if (updateUserDto.role && updateUserDto.role !== user.role) {
+      // 4) Cambios de rol: proteger “eliminar último admin”
+      // Caso: si el usuario objetivo es ADMIN y se cambia a EMPLEADO/CLIENTE, verificar que haya más de un admin.
+      if (typeof updateUserDto.role !== 'undefined' && updateUserDto.role !== user.role) {
+        // Solo admins pueden cambiar rol (ya validado), ahora proteger último admin
+        if (user.role === UserRole.ADMIN && updateUserDto.role !== UserRole.ADMIN) {
+          const adminCount = await this.userRepository.count({ where: { role: UserRole.ADMIN } });
+          if (adminCount <= 1) {
+            this.logger.warn(`Intento de eliminar el último admin (usuario ${user.id})`);
+            throw new BadRequestException('No se puede eliminar el último administrador del sistema');
+          }
+        }
         await this.loggingService.logRoleChange(
           currentUser.userId,
           user.id,
           user.role,
-          updateUserDto.role
+          updateUserDto.role,
         );
       }
 

@@ -174,6 +174,7 @@ export class UsersController {
    * @returns Usuario actualizado
    */
   @Patch(':id')
+  @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async update(
     @Param('id') id: string, 

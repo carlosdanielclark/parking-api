@@ -34,6 +34,11 @@ export class ReservasService {
     this.logger.log(`Creando reserva para usuario ${currentUser.userId}`);
 
     try {
+      if (!currentUser?.userId || currentUser.userId !== createReservaDto.usuario_id) {
+        this.logger.warn(`Intento de crear reserva para otro usuario. Auth=${currentUser?.userId} Payload=${createReservaDto.usuario_id}`);
+        throw new ForbiddenException('Solo puedes crear reservas para ti mismo');
+      }
+
       if (new Date(createReservaDto.fecha_fin) <= new Date(createReservaDto.fecha_inicio)) {
         throw new BadRequestException('La fecha de fin debe ser posterior a la de inicio');
       }
