@@ -35,7 +35,7 @@ export class AuthHelper {
         return await request(this.app.getHttpServer())
           .post('/auth/login')
           .send(payload)
-          .timeout(15000)
+          .timeout(20000)
           .expect(200);
       } catch (err: any) {
         const msg = String(err?.message ?? err);

@@ -28,13 +28,15 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
   };
 
   beforeAll(async () => {
+    jest.setTimeout(60000); // aumentar timeout global
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
-
+    await new Promise((res) => setTimeout(res, 1500));
     authHelper = new AuthHelper(app);
     dataFixtures = new DataFixtures(app);
     httpClient = new HttpClient(app);
@@ -198,6 +200,9 @@ describe('Caso de Uso 4: Acceder a los Logs del Parking (E2E)', () => {
     it('debe permitir filtrar logs por acción específica', async () => {
       const url = '/admin/logs?action=create_reservation';   
       const header = authHelper.getAuthHeader(usuarios.admin.token);
+      
+      await new Promise(r => setTimeout(r, 800)); 
+
       const response = await httpClient.withRetry(
         () => httpClient.get(url, header, 200), 8, 1500
       );

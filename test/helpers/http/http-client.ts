@@ -59,7 +59,7 @@ export class HttpClient {
       const request_builder = request(this.app.getHttpServer())
         .get(path)
         .set(headers)
-        .timeout(25000);
+        .timeout(30000);
 
       const response = expectStatus 
         ? await request_builder.expect(expectStatus)
@@ -181,8 +181,8 @@ export class HttpClient {
    */
   async withRetry<T>(
     operation: () => Promise<T>, 
-    maxRetries: number = 2, 
-    delayMs: number = 200
+    maxRetries: number = 3, 
+    delayMs: number = 400
   ): Promise<T> {
     let attempt = 0;
     

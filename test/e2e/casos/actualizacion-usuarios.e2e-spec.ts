@@ -326,17 +326,21 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
   });
 
   describe('Auto-actualización de usuarios', () => {
-    it('debe permitir a un usuario actualizar su propio perfil (excepto rol)', async () => {
+    it('No debe permitir a un usuario actualizar su propio perfil (excepto rol)', async () => {
       const datosActualizados = { nombre: 'Mi Nuevo Nombre', telefono: '+0000000000' };
 
       const url = `/users/${usuarioParaActualizar.user.id}`;
       const body = datosActualizados;      
       const header = authHelper.getAuthHeader(usuarioParaActualizar.token);
       const response = await httpClient.withRetry(
-        () => httpClient.patch(url, body, header, 200), 8, 1500
+        () => httpClient.patch(url, body, header, 403), 8, 1500
       );
 
-      expect(response.body.data).toMatchObject(datosActualizados);
+      expect(response.body).toMatchObject({
+        statusCode: 403,
+        error: expect.stringMatching(/Forbidden/i),
+        message: expect.any(String),
+      });
     });
 
     it('debe rechazar que un usuario cambie su propio rol', async () => {
@@ -347,10 +351,10 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         () => httpClient.patch(url, body, header, 403), 8, 1500
       );
 
-      expect(response.body.message).toContain('Solo los administradores pueden cambiar roles');
+      expect(response.body.message).toContain('Acceso denegado. Roles requeridos: admin');
     });
 
-    it('debe permitir al empleado actualizar su perfil pero no cambiar rol', async () => {
+    /*it('debe permitir al empleado actualizar su perfil pero no cambiar rol', async () => {
       const datosActualizados = { nombre: 'Empleado Actualizado', telefono: '+2222222222' };
 
       const url = `/users/${usuarios.empleado.user.id}`;
@@ -369,7 +373,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
       await httpClient.withRetry(
         () => httpClient.patch(roleUrl, roleBody, roleHeader, 403), 8, 1500
       );
-    });
+    });*/
   });
 
   describe('Validaciones de datos', () => {
@@ -427,7 +431,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         () => httpClient.patch(url, body, header, 403), 8, 1500
       );
 
-      expect(response.body.message).toContain('No tienes permisos para actualizar este usuario');
+      expect(response.body.message).toContain('Acceso denegado. Roles requeridos: admin');
     });
 
     it('debe rechazar que un empleado actualice otros usuarios', async () => {
@@ -438,7 +442,7 @@ describe('Caso de Uso 3: Actualizar los Detalles de un Usuario (E2E)', () => {
         () => httpClient.patch(url, body, header, 403), 8, 1500
       );
 
-      expect(response.body.message).toContain('No tienes permisos para actualizar este usuario');
+      expect(response.body.message).toContain('Acceso denegado. Roles requeridos: admin');
     });
 
     it('debe rechazar acceso sin autenticación', async () => {

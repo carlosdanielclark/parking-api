@@ -117,7 +117,12 @@ describe('Caso de Uso 1: Reservar Plaza de Aparcamiento (E2E)', () => {
             await request(app.getHttpServer())
               .post(`/reservas/${r.id}/cancelar`)
               .set('Authorization', `Bearer ${emergencyToken}`)
-              .timeout(10000);
+              .timeout(10000)
+              .expect(res => {
+                if (![200, 403, 409, 404].includes(res.status)) {
+                  throw new Error(`Cancel cleanup status inesperado: ${res.status}`);
+                }
+              });
           } catch (errCanc: any) {
           }
         }

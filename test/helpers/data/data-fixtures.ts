@@ -506,7 +506,12 @@ export class DataFixtures {
       await request(this.app.getHttpServer())
         .post(`/reservas/${reservaId}/cancelar`)
         .set({ Authorization: `Bearer ${adminToken}` })
-        .timeout(10000);
+        .timeout(10000)
+        .expect(r => {
+        if (![200, 403, 409, 404].includes(r.status)) {
+          throw new Error(`Estado inesperado al cancelar ${reservaId}: ${r.status}`);
+        }
+      });
     } catch (error: any) {
       if (error.status === 404) {
         logStepV3(`Reserva no existe: ${reservaId} (ignorar)`, {
