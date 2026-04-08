@@ -1,41 +1,40 @@
+# 🚗 Parking API
 
-# 🚗 API de Parking
+## 📋 Project Description
 
-## 📋 Descripción del proyecto
-
-API RESTful construida con Node.js y NestJS para la gestión completa de un sistema de aparcamiento. La aplicación permite reservar plazas de parking para vehículos, consultar la ocupación actual, gestionar usuarios con roles administrativos, empleados y clientes, y acceder a logs detallados de auditoría. Utiliza autenticación basada en JWT y autorización por roles para controlar el acceso a las funcionalidades. La persistencia combina PostgreSQL para las entidades principales y MongoDB para almacenar logs de actividad.
+RESTful API built with Node.js and NestJS for complete management of a parking system. The application allows booking parking spaces for vehicles, checking current occupancy, managing users with administrative roles, employees and customers, and accessing detailed audit logs. It uses JWT-based authentication and role-based authorization to control access to functionalities. Persistence combines PostgreSQL for main entities and MongoDB to store activity logs.
 
 ---
 
-## Pasos para ejecutar el proyecto de manera local
+## Steps to run the project locally
 
-### Requisitos previos
+### Prerequisites
 
-- Node.js (versión 18 o superior recomendada)
-- npm o pnpm como gestor de paquetes
-- PostgreSQL instalado y en funcionamiento
-- MongoDB instalado y en funcionamiento
-- Configuración correcta de las variables de entorno (ver `.env`)
+- Node.js (version 18 or higher recommended)
+- npm or pnpm as package manager
+- PostgreSQL installed and running
+- MongoDB installed and running
+- Correct configuration of environment variables (see `.env`)
 
-### Clona el repositorio
+### Clone the repository
 
 ```bash
 git clone https://github.com/carlosdanielclark/parking-api
 ```
 
-### Configuración de la base de datos
+### Database configuration
 
-1. Crear la base de datos en PostgreSQL (por ejemplo `parking_db`).
+1. Create the database in PostgreSQL (e.g. `parking_db`).
 
 ```bash
 createdb parking_db
 ```
 
-2. Asegurar que MongoDB está corriendo y accesible (configurado por defecto en `localhost:27017`).
+2. Ensure MongoDB is running and accessible (configured by default at `localhost:27017`).
 
-### Variables de entorno
+### Environment variables
 
-Asegúrese de configurar el archivo `.env` en la raíz del proyecto con los siguientes valores ajustados a su entorno:
+Make sure to configure the `.env` file in the project root with the following values adjusted to your environment:
 
 ```
 # PostgreSQL Configuration
@@ -64,81 +63,81 @@ NODE_ENV=development
 ```
 
 
-### Instalación de dependencias
+### Install dependencies
 
-Ejecutar el comando para instalar todas las dependencias:
+Run the command to install all dependencies:
 
 ```
 npm install
 ```
-o si usa pnpm:
+or if you use pnpm:
 
 ```bash
 pnpm install
 ```
 
-### (Opcional) Ejecutar migraciones y sembrar datos iniciales
+### (Optional) Run migrations and seed initial data
 
-Si se tienen scripts para migraciones o semillas, ejecutar para crear esquemas y usuarios iniciales (incluye admin y usuarios de prueba).
+If migration or seed scripts exist, run them to create schemas and initial users (includes admin and test users).
 
 ```bash
-pnpm run migration:run     \# o el comando equivalente configurado
-pnpm run seed              \# para crear usuarios admin, empleado y cliente
+pnpm run migration:run     # or the equivalent configured command
+pnpm run seed              # to create admin, employee and client users
 ```
-### Iniciar la aplicación localmente
+### Start the application locally
 
-Arrancar el servidor NestJS:
+Start the NestJS server:
 
 ```bash
 pnpm run start:dev
 ```
 
-El servidor quedará escuchando por defecto en `http://localhost:3000`.
+The server will listen by default at `http://localhost:3000`.
 
-Para ver Swagger:
+To see Swagger:
 
- * Navega a http://localhost:3000/api/docs
+ * Navigate to http://localhost:3000/api/docs
 
-### Uso de la API
+### API Usage
 
-- Registro y login: endpoints `/auth/register` y `/auth/login`.
-- Gestión de usuarios: `/users` (según permisos).
-- Reservas: `/reservas`.
-- Consulta ocupación: `/ocupacion`.
-- Gestión de plazas: `/plazas`.
-- Gestión vehículos: `/vehiculos`.
-- Logs administrativos bajo `/admin/logs`.
+- Registration and login: endpoints `/auth/register` and `/auth/login`.
+- User management: `/users` (depending on permissions).
+- Reservations: `/reservas`.
+- Occupancy query: `/ocupacion`.
+- Parking spaces management: `/plazas`.
+- Vehicles management: `/vehiculos`.
+- Administrative logs under `/admin/logs`.
 
-### Nota sobre pruebas E2E
+### Note about E2E tests
 
-Se incluyen pruebas end-to-end automatizadas usando Jest y Supertest. Para ejecutar el suite completo:
+Automated end-to-end tests are included using Jest and Supertest. To run the full suite:
 
 ```bash
 pnpm run test:e2e
 ```
 
-Esto garantiza que todos los casos de uso funcionan correctamente en un entorno controlado.
+This ensures all use cases work correctly in a controlled environment.
 
 ---
 
-Para detalles avanzados, puede consultar la documentación técnica más detallada en el repositorio o los comentarios de código fuente en la carpeta `src/`.
+For advanced details, you can consult the more detailed technical documentation in the repository or the source code comments in the `src/` folder.
 
 ---
 
-Este proyecto proporciona un sistema robusto y seguro para la gestión integral de parkings, combinando una arquitectura modular con autenticación, roles y auditoría completa con logs almacenados en MongoDB.
+This project provides a robust and secure system for comprehensive parking management, combining a modular architecture with authentication, roles and complete auditing with logs stored in MongoDB.
 
 ---
-## Imagenes 
-![Descripción](images/swagger.png)
-
----
-
-![Descripción](images/swagger-g.png)
+## Images 
+![Description](images/swagger.png)
 
 ---
 
-![Descripción](images/swagger-h.png)
+![Description](images/swagger-g.png)
 
 ---
 
-![Descripción](images/console.png)
+![Description](images/swagger-h.png)
+
+---
+
+![Description](images/console.png)
